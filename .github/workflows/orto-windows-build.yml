@@ -1,6 +1,18 @@
 name: ORTO Windows Build
 
 on:
+  push:
+    branches:
+      - orto-dev
+    paths:
+      - 'src/**'
+      - 'libslic3r/**'
+      - 'slic3r/**'
+      - '**/CMakeLists.txt'
+      - 'version.inc'
+      - '.github/workflows/orto-windows-build.yml'
+      - '.github/workflows/build_*.yml'
+      - 'build_win.bat'
   workflow_dispatch:
     inputs:
       force-build:
