@@ -950,7 +950,124 @@ void GUI_App::post_init()
     m_open_method = "double_click";
     bool switch_to_3d = false;
 
-    if (!this->init_params->input_files.empty()) {
+    // ORTO Edition: import native printer, process and filament JSON presets before
+    // loading the startup model. The model preparation below must use these active presets.
+    bool orto_startup_profiles_valid = true;
+    if (!this->init_params->load_configs.empty() || !this->init_params->load_filaments.empty()) {
+        struct StartupPreset {
+            Preset::Type type;
+            std::string path;
+            std::string name;
+            DynamicPrintConfig config;
+            Semver version;
+        };
+        std::vector<StartupPreset> printer_profiles;
+        std::vector<StartupPreset> process_profiles;
+        std::vector<StartupPreset> filament_profiles;
+        std::string profile_error;
+
+        auto read_startup_preset = [&](const std::string& path, bool filament_argument) -> bool {
+            if (!boost::filesystem::exists(path)) {
+                profile_error = "Файл профиля не найден:\\n" + path;
+                return false;
+            }
+
+            DynamicPrintConfig config;
+            std::map<std::string, std::string> key_values;
+            std::string reason;
+            try {
+                config.load_from_json(path, ForwardCompatibilitySubstitutionRule::Enable, key_values, reason);
+            } catch (const std::exception& ex) {
+                profile_error = "Не удалось прочитать профиль:\\n" + path + "\\n\\n" + ex.what();
+                return false;
+            }
+            if (!reason.empty()) {
+                profile_error = "Некорректный JSON-профиль:\\n" + path + "\\n\\n" + reason;
+                return false;
+            }
+
+            const auto name_it = key_values.find(BBL_JSON_KEY_NAME);
+            const auto type_it = key_values.find(BBL_JSON_KEY_TYPE);
+            if (name_it == key_values.end() || name_it->second.empty() || type_it == key_values.end()) {
+                profile_error = "В JSON-профиле отсутствуют обязательные поля type или name:\\n" + path;
+                return false;
+            }
+
+            Preset::Type type;
+            if (type_it->second == "machine" && !filament_argument)
+                type = Preset::TYPE_PRINTER;
+            else if (type_it->second == "process" && !filament_argument)
+                type = Preset::TYPE_PRINT;
+            else if (type_it->second == "filament" && filament_argument)
+                type = Preset::TYPE_FILAMENT;
+            else {
+                profile_error = "Тип профиля не соответствует аргументу запуска:\\n" + path +
+                    "\\n\\nУказан type: " + type_it->second;
+                return false;
+            }
+
+            std::string resolve_error;
+            if (!preset_bundle->resolve_preset_config(config, type, path,
+                    ForwardCompatibilitySubstitutionRule::Enable, resolve_error)) {
+                profile_error = "Не удалось разрешить наследование профиля:\\n" + path +
+                    "\\n\\n" + resolve_error;
+                return false;
+            }
+
+            StartupPreset preset{ type, path, name_it->second, std::move(config), get_version_from_json(path) };
+            if (type == Preset::TYPE_PRINTER)
+                printer_profiles.emplace_back(std::move(preset));
+            else if (type == Preset::TYPE_PRINT)
+                process_profiles.emplace_back(std::move(preset));
+            else
+                filament_profiles.emplace_back(std::move(preset));
+            return true;
+        };
+
+        for (const std::string& path : this->init_params->load_configs)
+            if (!read_startup_preset(path, false)) break;
+        if (profile_error.empty()) {
+            for (const std::string& path : this->init_params->load_filaments)
+                if (!read_startup_preset(path, true)) break;
+        }
+
+        if (profile_error.empty() &&
+            (printer_profiles.size() > 1 || process_profiles.size() > 1)) {
+            profile_error = "Для запуска ORTO укажите не более одного профиля принтера и одного профиля процесса.";
+        }
+
+        if (!profile_error.empty()) {
+            orto_startup_profiles_valid = false;
+            wxMessageBox(wxString::FromUTF8(profile_error), _L("ORTO: ошибка загрузки профилей"),
+                         wxOK | wxICON_ERROR, mainframe);
+            BOOST_LOG_TRIVIAL(error) << "ORTO startup profile loading failed: " << profile_error;
+        } else {
+            // Resolve and validate every file first; only now modify the live preset collections.
+            if (!printer_profiles.empty()) {
+                auto& preset = printer_profiles.front();
+                preset_bundle->printers.load_preset(preset.path, preset.name, std::move(preset.config), true, preset.version);
+            }
+            if (!process_profiles.empty()) {
+                auto& preset = process_profiles.front();
+                preset_bundle->prints.load_preset(preset.path, preset.name, std::move(preset.config), true, preset.version);
+            }
+            if (!filament_profiles.empty()) {
+                if (preset_bundle->filament_presets.size() < filament_profiles.size())
+                    preset_bundle->set_num_filaments(static_cast<unsigned int>(filament_profiles.size()));
+                for (size_t i = 0; i < filament_profiles.size(); ++i) {
+                    auto& preset = filament_profiles[i];
+                    preset_bundle->filaments.load_preset(preset.path, preset.name,
+                        std::move(preset.config), i == 0, preset.version);
+                    preset_bundle->set_filament_preset(i, preset.name);
+                }
+            }
+            load_current_presets(true);
+            BOOST_LOG_TRIVIAL(info) << "ORTO startup presets loaded: printer=" << printer_profiles.size()
+                << ", process=" << process_profiles.size() << ", filaments=" << filament_profiles.size();
+        }
+    }
+
+    if (!this->init_params->input_files.empty() && orto_startup_profiles_valid) {
 
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", init with input files, size %1%, input_gcode %2%")
             %this->init_params->input_files.size() %this->init_params->input_gcode;
