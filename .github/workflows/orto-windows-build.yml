@@ -25,6 +25,13 @@ permissions:
   actions: write
   contents: read
 
+# Only the newest Windows build for this branch is useful.
+# Unlike Quick Build, this workflow does not share a mutable incremental
+# build directory, so cancelling an obsolete run cannot corrupt that cache.
+concurrency:
+  group: orto-windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build_windows_x64:
     name: Build Windows x64
