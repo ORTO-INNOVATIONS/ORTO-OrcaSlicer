@@ -2820,7 +2820,7 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
     };
 
     ModelObject& model_object = *(*m_objects)[obj_idx];
-    if (instance_idx >= model_object.instances.size())
+    if (instance_idx >= model_object.instances.size() || (!show_errors && model_object.instances.size() != 1))
         return false;
 
     ModelVolume* shell = nullptr;
