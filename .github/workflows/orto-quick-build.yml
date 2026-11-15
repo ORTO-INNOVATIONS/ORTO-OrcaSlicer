@@ -92,7 +92,7 @@ jobs:
           }
 
       - name: Save dependency cache
-        if: !inputs.force-build && steps.deps-cache.outputs.cache-hit != 'true' && success()
+        if: ${{ !inputs.force-build && steps.deps-cache.outputs.cache-hit != 'true' && success() }}
         uses: actions/cache/save@v6
         with:
           path: deps/build/OrcaSlicer_dep
