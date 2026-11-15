@@ -1675,6 +1675,7 @@ void ObjectList::show_context_menu(const bool evt_context_menu)
         return;
 
     wxMenu* menu {nullptr};
+    bool show_orto_prepare = false;
     Plater* plater = wxGetApp().plater();
 
     if (multiple_selection())
@@ -1707,6 +1708,7 @@ void ObjectList::show_context_menu(const bool evt_context_menu)
                 menu =  type & itPlate                                              ? plater->plate_menu() :
                         type & itInstance                                           ? plater->instance_menu() :
                         printer_technology() == ptFFF                               ? plater->object_menu() : plater->sla_object_menu();
+            show_orto_prepare = (type & (itObject | itInstance)) && printer_technology() == ptFFF;
             plater->SetPlateIndexByRightMenuInLeftUI(-1);
             if (type & itPlate) {
                 int            plate_idx = -1;
@@ -1720,8 +1722,22 @@ void ObjectList::show_context_menu(const bool evt_context_menu)
             menu = plater->default_menu();
     }
 
-    if (menu)
+    if (menu) {
+        if (show_orto_prepare) {
+            static const int orto_prepare_id = wxWindow::NewControlId();
+            if (menu->FindItem(orto_prepare_id) == nullptr) {
+                menu->AppendSeparator();
+                menu->Append(orto_prepare_id, _L("ORTO: Prepare cosmetic shell"));
+                menu->Bind(wxEVT_MENU, &ObjectList::on_prepare_orto_shell, this, orto_prepare_id);
+            }
+        }
         plater->PopupMenu(menu);
+    }
+}
+
+void ObjectList::on_prepare_orto_shell(wxCommandEvent& event)
+{
+    prepare_orto_shell();
 }
 
 void ObjectList::extruder_editing()
@@ -2765,6 +2781,108 @@ void ObjectList::switch_to_object_process()
         TipsDialog dlg(wxGetApp().mainframe, _L("Edit Process Settings"), _L("Switch to per-object setting mode to edit process settings of selected objects."), "do_not_show_object_process_tips");
         dlg.ShowModal();
     }
+}
+
+void ObjectList::prepare_orto_shell()
+{
+    Plater* plater = wxGetApp().plater();
+    if (plater == nullptr || printer_technology() != ptFFF)
+        return;
+
+    const int obj_idx = get_selected_obj_idx();
+    if (obj_idx < 0 || obj_idx >= int(m_objects->size()))
+        return;
+
+    const Selection& selection = scene_selection();
+    if (selection.get_object_idx() != obj_idx || selection.get_instance_idxs().size() != 1) {
+        wxMessageBox(_L("Select exactly one instance of the cosmetic shell."), _L("ORTO Slicer Prep"),
+                     wxOK | wxICON_INFORMATION, this);
+        return;
+    }
+
+    const size_t instance_idx = size_t(*selection.get_instance_idxs().begin());
+    ModelObject& model_object = *(*m_objects)[obj_idx];
+    if (instance_idx >= model_object.instances.size())
+        return;
+
+    ModelVolume* shell = nullptr;
+    size_t model_part_count = 0;
+    for (ModelVolume* volume : model_object.volumes) {
+        if (volume->type() == ModelVolumeType::MODEL_PART) {
+            ++model_part_count;
+            shell = volume;
+        }
+        if (volume->name == "ORTO-Cube" || volume->name == "Generic-Cube") {
+            wxMessageBox(_L("This object already contains a preparation cube. Undo the previous preparation before running it again."),
+                         _L("ORTO Slicer Prep"), wxOK | wxICON_INFORMATION, this);
+            return;
+        }
+    }
+    if (model_part_count != 1 || shell == nullptr) {
+        wxMessageBox(_L("ORTO preparation currently requires an object with exactly one model part."),
+                     _L("ORTO Slicer Prep"), wxOK | wxICON_INFORMATION, this);
+        return;
+    }
+
+    const BoundingBoxf3 original_bbox = model_object.instance_bounding_box(instance_idx);
+    if (!original_bbox.defined || shell->mesh().empty())
+        return;
+
+    Plater::TakeSnapshot snapshot(plater, _u8L("ORTO: Prepare cosmetic shell"));
+
+    // Match the reference 3MF: rotate the shell volume +90 degrees around its local X axis.
+    // Premultiply only the linear part so the volume's existing local offset is preserved.
+    Transform3d shell_transform = shell->get_matrix();
+    const Eigen::Matrix3d rotate_x =
+        Eigen::AngleAxisd(0.5 * PI, Vec3d::UnitX()).toRotationMatrix();
+    shell_transform.block<3, 3>(0, 0) = rotate_x * shell_transform.block<3, 3>(0, 0);
+    shell->set_transformation(shell_transform);
+    model_object.invalidate_bounding_box();
+
+    // Calculate the actual transformed shell bounds, then place its lowest point at Z=3 mm.
+    BoundingBoxf3 shell_bbox = model_object.instance_bounding_box(instance_idx);
+    if (!shell_bbox.defined)
+        return;
+    const double lift_z = 3.0 - shell_bbox.min.z();
+    model_object.translate_instance(instance_idx, Vec3d(0.0, 0.0, lift_z));
+    shell_bbox = model_object.instance_bounding_box(instance_idx);
+    if (!shell_bbox.defined)
+        return;
+
+    // Place a 25 mm cube immediately beside the shell in world XY, aligned with its
+    // minimum Y edge. Keep the cube fully below the build plate, independent of shell height.
+    constexpr double cube_size = 25.0;
+    const Vec3d cube_world_center(shell_bbox.max.x() + cube_size * 0.5,
+                                  shell_bbox.min.y() + cube_size * 0.5,
+                                  -25.0);
+
+    TriangleMesh cube_mesh(its_make_cube(cube_size, cube_size, cube_size));
+    ModelVolume* cube = model_object.add_volume(std::move(cube_mesh), ModelVolumeType::MODEL_PART);
+    if (cube == nullptr)
+        return;
+
+    // Counter-transform the instance so the cube remains 25x25x25 mm and axis-aligned
+    // in world coordinates even if the selected instance has a rotation or scale.
+    const Transform3d instance_matrix = model_object.instances[instance_idx]->get_transformation().get_matrix();
+    Transform3d cube_transform = instance_matrix.inverse();
+    cube_transform.translation() = instance_matrix.inverse() * cube_world_center;
+    cube->set_transformation(cube_transform);
+    cube->name = "ORTO-Cube";
+    cube->source.is_from_builtin_objects = true;
+
+    int extruder_id = 0;
+    if (model_object.config.has("extruder"))
+        extruder_id = model_object.config.opt_int("extruder");
+    cube->config.set_key_value("extruder", new ConfigOptionInt(extruder_id));
+
+    model_object.invalidate_bounding_box();
+    plater->get_view3D_canvas3D()->update_instance_printable_state_for_object(size_t(obj_idx));
+    plater->canvas3D()->reload_scene(true, true);
+    update_info_items(obj_idx);
+    notify_instance_updated(obj_idx);
+    selection_changed();
+
+    wxGetApp().mainframe->update_title();
 }
 
 void ObjectList::load_shape_object(const std::string &type_name, bool interactive)
