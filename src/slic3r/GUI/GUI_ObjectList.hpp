@@ -320,6 +320,9 @@ public:
     void                load_modifier(const wxArrayString& input_files, ModelObject& model_object, std::vector<ModelVolume*>& added_volumes, ModelVolumeType type, bool from_galery = false);
     // interactive uses the size the user enters or saved as default; otherwise the shape gets its built-in default size.
     void                load_generic_subobject(const std::string& type_name, const ModelVolumeType type, bool interactive = true);
+    // ORTO: prepare a selected cosmetic shell for manual support painting and slicing.
+    void                prepare_orto_shell();
+    void                on_prepare_orto_shell(wxCommandEvent& event);
     void                load_shape_object(const std::string &type_name, bool interactive);
     void                load_mesh_object(const TriangleMesh &mesh, const wxString &name, bool center = true);
     // One object holding one part per mesh; the parts keep their placement relative to each other.
