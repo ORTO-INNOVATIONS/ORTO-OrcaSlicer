@@ -1,4 +1,4 @@
-name: ORTO Windows Build
+name: ORTO Windows Portable Build
 
 on:
   push:
@@ -12,9 +12,8 @@ on:
       - 'CMakeLists.txt'
       - 'version.inc'
       - '.github/workflows/orto-windows-build.yml'
-      - '.github/workflows/build_*.yml'
+      - '.github/workflows/orto-quick-build.yml'
       - 'build_win.bat'
-      - 'scripts/msix/**'
   workflow_dispatch:
     inputs:
       force-build:
@@ -24,23 +23,14 @@ on:
         default: false
 
 permissions:
-  actions: write
   contents: read
 
-# Only the newest Windows build for this branch is useful.
-# Unlike Quick Build, this workflow does not share a mutable incremental
-# build directory, so cancelling an obsolete run cannot corrupt that cache.
-concurrency:
-  group: orto-windows-build-${{ github.ref }}
-  cancel-in-progress: true
-
+# ORTO distributes only the Windows Portable build. Reuse the tested
+# incremental pipeline; do not invoke the upstream installer/CPack workflow.
 jobs:
-  build_windows_x64:
-    name: Build Windows x64
-    uses: ./.github/workflows/build_check_cache.yml
+  portable:
+    name: Build ORTO Windows Portable
+    uses: ./.github/workflows/orto-quick-build.yml
     with:
-      os: windows-latest
-      arch: x64
-      compiler: clang
       force-build: ${{ inputs.force-build || false }}
     secrets: inherit
