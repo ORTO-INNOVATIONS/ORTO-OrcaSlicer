@@ -2803,9 +2803,25 @@ void ObjectList::prepare_orto_shell()
     }
 
     const size_t instance_idx = size_t(*selection.get_instance_idxs().begin());
+    prepare_orto_shell_for_object(obj_idx, instance_idx, true);
+}
+
+bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx, bool show_errors)
+{
+    Plater* plater = wxGetApp().plater();
+    if (plater == nullptr || printer_technology() != ptFFF || m_objects == nullptr)
+        return false;
+    if (obj_idx < 0 || obj_idx >= int(m_objects->size()))
+        return false;
+
+    const auto report_error = [this, show_errors](const wxString& message) {
+        if (show_errors)
+            wxMessageBox(message, _L("ORTO Slicer Prep"), wxOK | wxICON_INFORMATION, this);
+    };
+
     ModelObject& model_object = *(*m_objects)[obj_idx];
     if (instance_idx >= model_object.instances.size())
-        return;
+        return false;
 
     ModelVolume* shell = nullptr;
     size_t model_part_count = 0;
@@ -2815,24 +2831,21 @@ void ObjectList::prepare_orto_shell()
             shell = volume;
         }
         if (volume->is_support_blocker() && volume->name == "ORTO-Support-Blocker") {
-            wxMessageBox(_L("This object already contains an ORTO support blocker. Undo the previous preparation before running it again."),
-                         _L("ORTO Slicer Prep"), wxOK | wxICON_INFORMATION, this);
-            return;
+            report_error(_L("This object already contains an ORTO support blocker. Undo the previous preparation before running it again."));
+            return false;
         }
         if (volume->name == "ORTO-Cube" || volume->name == "Generic-Cube") {
-            wxMessageBox(_L("This object contains a legacy preparation cube. Undo the previous preparation before running it again."),
-                         _L("ORTO Slicer Prep"), wxOK | wxICON_INFORMATION, this);
-            return;
+            report_error(_L("This object contains a legacy preparation cube. Undo the previous preparation before running it again."));
+            return false;
         }
     }
     if (model_part_count != 1 || shell == nullptr) {
-        wxMessageBox(_L("ORTO preparation currently requires an object with exactly one model part."),
-                     _L("ORTO Slicer Prep"), wxOK | wxICON_INFORMATION, this);
-        return;
+        report_error(_L("ORTO preparation currently requires an object with exactly one model part."));
+        return false;
     }
 
     if (shell->mesh().empty())
-        return;
+        return false;
 
     Plater::TakeSnapshot snapshot(plater, _u8L("ORTO: Prepare cosmetic shell"));
 
@@ -2848,12 +2861,12 @@ void ObjectList::prepare_orto_shell()
     // Calculate the actual transformed shell bounds, then place its lowest point at Z=3 mm.
     BoundingBoxf3 shell_bbox = model_object.instance_bounding_box(instance_idx);
     if (!shell_bbox.defined)
-        return;
+        return false;
     const double lift_z = 3.0 - shell_bbox.min.z();
     model_object.translate_instance(instance_idx, Vec3d(0.0, 0.0, lift_z));
     shell_bbox = model_object.instance_bounding_box(instance_idx);
     if (!shell_bbox.defined)
-        return;
+        return false;
 
     // Create a native support blocker covering the complete build-plate XY area
     // and the shell, with a 10 mm safety margin. Its lower face is 20 mm above
@@ -2863,7 +2876,7 @@ void ObjectList::prepare_orto_shell()
     constexpr double blocker_height = 700.0;
     const BoundingBoxf bed_bbox = plater->build_volume().bounding_volume2d();
     if (!bed_bbox.defined)
-        return;
+        return false;
 
     const double blocker_min_x = std::min(shell_bbox.min.x(), bed_bbox.min.x()) - blocker_margin;
     const double blocker_min_y = std::min(shell_bbox.min.y(), bed_bbox.min.y()) - blocker_margin;
@@ -2878,7 +2891,7 @@ void ObjectList::prepare_orto_shell()
     TriangleMesh blocker_mesh(its_make_cube(blocker_width, blocker_depth, blocker_height));
     ModelVolume* blocker = model_object.add_volume(std::move(blocker_mesh), ModelVolumeType::SUPPORT_BLOCKER);
     if (blocker == nullptr)
-        return;
+        return false;
 
     // Counter-transform the instance so the blocker stays axis-aligned in world
     // coordinates and retains its intended dimensions for rotated/scaled instances.
@@ -2894,9 +2907,11 @@ void ObjectList::prepare_orto_shell()
     plater->canvas3D()->reload_scene(true, true);
     update_info_items(obj_idx);
     notify_instance_updated(obj_idx);
-    selection_changed();
+    if (show_errors)
+        selection_changed();
 
     wxGetApp().mainframe->update_title();
+    return true;
 }
 
 void ObjectList::load_shape_object(const std::string &type_name, bool interactive)
