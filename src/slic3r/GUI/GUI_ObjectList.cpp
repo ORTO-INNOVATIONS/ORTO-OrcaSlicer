@@ -1726,8 +1726,10 @@ void ObjectList::show_context_menu(const bool evt_context_menu)
         if (show_orto_prepare) {
             static const int orto_prepare_id = wxWindow::NewControlId();
             if (menu->FindItem(orto_prepare_id) == nullptr) {
-                menu->AppendSeparator();
-                menu->Append(orto_prepare_id, _L("ORTO: Prepare cosmetic shell"));
+                // Keep the ORTO preparation command at the very top, visually
+                // separated from the standard OrcaSlicer context-menu actions.
+                menu->Insert(0, orto_prepare_id, _L("ORTO: Prepare cosmetic shell"));
+                menu->InsertSeparator(1);
                 menu->Bind(wxEVT_MENU, &ObjectList::on_prepare_orto_shell, this, orto_prepare_id);
             }
         }
@@ -2812,8 +2814,13 @@ void ObjectList::prepare_orto_shell()
             ++model_part_count;
             shell = volume;
         }
+        if (volume->is_support_blocker() && volume->name == "ORTO-Support-Blocker") {
+            wxMessageBox(_L("This object already contains an ORTO support blocker. Undo the previous preparation before running it again."),
+                         _L("ORTO Slicer Prep"), wxOK | wxICON_INFORMATION, this);
+            return;
+        }
         if (volume->name == "ORTO-Cube" || volume->name == "Generic-Cube") {
-            wxMessageBox(_L("This object already contains a preparation cube. Undo the previous preparation before running it again."),
+            wxMessageBox(_L("This object contains a legacy preparation cube. Undo the previous preparation before running it again."),
                          _L("ORTO Slicer Prep"), wxOK | wxICON_INFORMATION, this);
             return;
         }
@@ -2848,31 +2855,39 @@ void ObjectList::prepare_orto_shell()
     if (!shell_bbox.defined)
         return;
 
-    // Place a 25 mm cube immediately beside the shell in world XY, aligned with its
-    // minimum Y edge. Keep the cube fully below the build plate, independent of shell height.
-    constexpr double cube_size = 25.0;
-    const Vec3d cube_world_center(shell_bbox.max.x() + cube_size * 0.5,
-                                  shell_bbox.min.y() + cube_size * 0.5,
-                                  -25.0);
-
-    TriangleMesh cube_mesh(its_make_cube(cube_size, cube_size, cube_size));
-    ModelVolume* cube = model_object.add_volume(std::move(cube_mesh), ModelVolumeType::MODEL_PART);
-    if (cube == nullptr)
+    // Create a native support blocker covering the complete build-plate XY area
+    // and the shell, with a 10 mm safety margin. Its lower face is 20 mm above
+    // the plate, so supports remain possible only in the first 20 mm of height.
+    constexpr double blocker_margin = 10.0;
+    constexpr double blocker_bottom_z = 20.0;
+    constexpr double blocker_height = 700.0;
+    const BoundingBoxf bed_bbox = plater->build_volume().bounding_volume2d();
+    if (!bed_bbox.defined)
         return;
 
-    // Counter-transform the instance so the cube remains 25x25x25 mm and axis-aligned
-    // in world coordinates even if the selected instance has a rotation or scale.
-    const Transform3d instance_matrix = model_object.instances[instance_idx]->get_transformation().get_matrix();
-    Transform3d cube_transform = instance_matrix.inverse();
-    cube_transform.translation() = instance_matrix.inverse() * cube_world_center;
-    cube->set_transformation(cube_transform);
-    cube->name = "ORTO-Cube";
-    cube->source.is_from_builtin_objects = true;
+    const double blocker_min_x = std::min(shell_bbox.min.x(), bed_bbox.min.x()) - blocker_margin;
+    const double blocker_min_y = std::min(shell_bbox.min.y(), bed_bbox.min.y()) - blocker_margin;
+    const double blocker_max_x = std::max(shell_bbox.max.x(), bed_bbox.max.x()) + blocker_margin;
+    const double blocker_max_y = std::max(shell_bbox.max.y(), bed_bbox.max.y()) + blocker_margin;
+    const double blocker_width = blocker_max_x - blocker_min_x;
+    const double blocker_depth = blocker_max_y - blocker_min_y;
+    const Vec3d blocker_world_center((blocker_min_x + blocker_max_x) * 0.5,
+                                     (blocker_min_y + blocker_max_y) * 0.5,
+                                     blocker_bottom_z + blocker_height * 0.5);
 
-    int extruder_id = 0;
-    if (model_object.config.has("extruder"))
-        extruder_id = model_object.config.opt_int("extruder");
-    cube->config.set_key_value("extruder", new ConfigOptionInt(extruder_id));
+    TriangleMesh blocker_mesh(its_make_cube(blocker_width, blocker_depth, blocker_height));
+    ModelVolume* blocker = model_object.add_volume(std::move(blocker_mesh), ModelVolumeType::SUPPORT_BLOCKER);
+    if (blocker == nullptr)
+        return;
+
+    // Counter-transform the instance so the blocker stays axis-aligned in world
+    // coordinates and retains its intended dimensions for rotated/scaled instances.
+    const Transform3d instance_matrix = model_object.instances[instance_idx]->get_transformation().get_matrix();
+    Transform3d blocker_transform = instance_matrix.inverse();
+    blocker_transform.translation() = instance_matrix.inverse() * blocker_world_center;
+    blocker->set_transformation(blocker_transform);
+    blocker->name = "ORTO-Support-Blocker";
+    blocker->source.is_from_builtin_objects = true;
 
     model_object.invalidate_bounding_box();
     plater->get_view3D_canvas3D()->update_instance_printable_state_for_object(size_t(obj_idx));
