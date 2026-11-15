@@ -2,6 +2,19 @@ name: ORTO Quick Build
 
 on:
   workflow_dispatch:
+    inputs:
+      force-build:
+        description: 'Force rebuild dependencies'
+        type: boolean
+        required: false
+        default: false
+  workflow_call:
+    inputs:
+      force-build:
+        description: 'Force rebuild dependencies'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -37,6 +50,7 @@ jobs:
 
       - name: Restore dependencies
         id: deps-cache
+        if: \${{ !inputs.force-build }}
         uses: actions/cache/restore@v6
         with:
           path: deps/build/OrcaSlicer_dep
@@ -48,6 +62,7 @@ jobs:
 
       - name: Restore incremental build tree
         id: build-cache
+        if: \${{ !inputs.force-build }}
         uses: actions/cache/restore@v6
         with:
           path: build
@@ -66,7 +81,7 @@ jobs:
         uses: microsoft/setup-msbuild@v3
 
       - name: Build dependencies on cache miss
-        if: steps.deps-cache.outputs.cache-hit != 'true'
+        if: inputs.force-build || steps.deps-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           Write-Host 'Dependency cache miss. Building dependencies once to bootstrap the Quick Build cache.'
