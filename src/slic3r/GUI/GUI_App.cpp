@@ -1006,7 +1006,6 @@ void GUI_App::post_init()
                 return false;
             }
 
-            config.normalize_fdm();
             const auto from_it = key_values.find(BBL_JSON_KEY_FROM);
             if (from_it == key_values.end() ||
                 (from_it->second != "system" && from_it->second != "User" && from_it->second != "user")) {
@@ -1053,6 +1052,7 @@ void GUI_App::post_init()
                     config = std::move(resolved);
                 }
             }
+            config.normalize_fdm();
 
             StartupPreset preset{ type, path, name_it->second, std::move(config), get_version_from_json(path) };
             if (type == Preset::TYPE_PRINTER)
@@ -1078,7 +1078,7 @@ void GUI_App::post_init()
 
         if (!profile_error.empty()) {
             orto_startup_profiles_valid = false;
-            wxMessageBox(wxString::FromUTF8(profile_error), _L("ORTO: ошибка загрузки профилей"),
+            wxMessageBox(from_u8(profile_error), _L("ORTO: ошибка загрузки профилей"),
                          wxOK | wxICON_ERROR, mainframe);
             BOOST_LOG_TRIVIAL(error) << "ORTO startup profile loading failed: " << profile_error;
         } else {
