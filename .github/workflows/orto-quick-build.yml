@@ -1,18 +1,6 @@
 name: ORTO Quick Build
 
 on:
-  push:
-    branches:
-      - orto-dev
-    paths:
-      - 'src/**'
-      - 'libslic3r/**'
-      - 'slic3r/**'
-      - '**/CMakeLists.txt'
-      - 'CMakeLists.txt'
-      - 'version.inc'
-      - 'build_win.bat'
-      - '.github/workflows/orto-quick-build.yml'
   workflow_dispatch:
 
 permissions:
