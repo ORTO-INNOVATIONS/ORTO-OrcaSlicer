@@ -20,7 +20,7 @@ permissions:
 # Keep one writer for the mutable incremental build cache.
 concurrency:
   group: orto-quick-build-windows-x64
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   quick-build:
@@ -55,6 +55,13 @@ jobs:
           key: ${{ env.BUILD_CACHE_KEY }}
           restore-keys: |
             orto-quick-build-windows-x64-
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "~4.3.0"
+          useLocalCache: true
+          useCloudCache: true
 
       - name: Setup MSBuild environment
         uses: microsoft/setup-msbuild@v3
