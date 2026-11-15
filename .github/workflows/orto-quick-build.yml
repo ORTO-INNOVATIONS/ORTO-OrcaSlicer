@@ -39,14 +39,22 @@ jobs:
         with:
           lfs: false
 
+      - name: Compute dependency cache key
+        id: deps-key
+        shell: pwsh
+        run: |
+          $depsTree = git rev-parse "${{ github.sha }}:deps"
+          "key=windows-x64-clang-cache-orcaslicer_deps-build-$depsTree" >> $env:GITHUB_OUTPUT
+
       - name: Restore dependencies
         id: deps-cache
         uses: actions/cache/restore@v6
         with:
           path: deps/build/OrcaSlicer_dep
-          # Match the exact cache key produced by build_check_cache.yml for Windows x64 Clang.
-          key: windows-x64-clang-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }}
-          # A missing deps cache is a real prerequisite problem; make it explicit below.
+          # Prefer this workflow's fast Git-tree key; fall back to any existing full-build deps cache.
+          key: ${{ steps.deps-key.outputs.key }}
+          restore-keys: |
+            windows-x64-clang-cache-orcaslicer_deps-build-
           fail-on-cache-miss: false
 
       - name: Restore incremental build tree
@@ -84,7 +92,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: deps/build/OrcaSlicer_dep
-          key: windows-x64-clang-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }}
+          key: ${{ steps.deps-key.outputs.key }}
 
       - name: Configure and build OrcaSlicer
         shell: pwsh
