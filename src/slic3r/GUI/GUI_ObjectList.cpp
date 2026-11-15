@@ -2858,11 +2858,30 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
     shell->set_transformation(shell_transform);
     model_object.invalidate_bounding_box();
 
-    // Calculate the actual transformed shell bounds, then place its lowest point at Z=3 mm.
+    // Read ORTO preparation heights from user preferences (millimeters).
+    const auto read_orto_height = [](const char* key, double fallback) {
+        const std::string configured = wxGetApp().app_config->get(key);
+        if (configured.empty())
+            return fallback;
+        try {
+            size_t parsed = 0;
+            const double value = std::stod(configured, &parsed);
+            if (parsed != configured.size() || !std::isfinite(value) || value < 0.0 || value > 100.0)
+                return fallback;
+            return value;
+        } catch (...) {
+            return fallback;
+        }
+    };
+    const double shell_lift_height = read_orto_height("orto_shell_lift_mm", 3.0);
+    const double blocker_bottom_z = read_orto_height("orto_support_blocker_lift_mm", 20.0);
+
+    // Calculate the actual transformed shell bounds, then place its lowest point
+    // at the configured height above the build plate.
     BoundingBoxf3 shell_bbox = model_object.instance_bounding_box(instance_idx);
     if (!shell_bbox.defined)
         return false;
-    const double lift_z = 3.0 - shell_bbox.min.z();
+    const double lift_z = shell_lift_height - shell_bbox.min.z();
     model_object.translate_instance(instance_idx, Vec3d(0.0, 0.0, lift_z));
     shell_bbox = model_object.instance_bounding_box(instance_idx);
     if (!shell_bbox.defined)
@@ -2872,7 +2891,6 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
     // and the shell, with a 10 mm safety margin. Its lower face is 20 mm above
     // the plate, so supports remain possible only in the first 20 mm of height.
     constexpr double blocker_margin = 10.0;
-    constexpr double blocker_bottom_z = 20.0;
     constexpr double blocker_height = 700.0;
     const BoundingBoxf bed_bbox = plater->build_volume().bounding_volume2d();
     if (!bed_bbox.defined)
