@@ -137,7 +137,7 @@ jobs:
       # Save the Ninja graph and object files even after a compiler failure:
       # the next run can reuse everything that was built successfully.
       - name: Save incremental build tree
-        if: always() && steps.build-cache.outcome == 'success'
+        if: always() && (steps.build-cache.outcome == 'success' || inputs.force-build)
         uses: actions/cache/save@v6
         with:
           path: build
