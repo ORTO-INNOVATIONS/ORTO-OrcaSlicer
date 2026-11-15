@@ -9,6 +9,7 @@ on:
       - 'libslic3r/**'
       - 'slic3r/**'
       - '**/CMakeLists.txt'
+      - 'CMakeLists.txt'
       - 'version.inc'
       - 'build_win.bat'
       - '.github/workflows/orto-quick-build.yml'
