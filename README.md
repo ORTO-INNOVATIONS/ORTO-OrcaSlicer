@@ -106,6 +106,7 @@ orto-orca-slicer.exe ^
 - [GitHub Actions](https://github.com/ORTO-INNOVATIONS/ORTO-OrcaSlicer/actions)
 - [ORTO Quick Build](https://github.com/ORTO-INNOVATIONS/ORTO-OrcaSlicer/actions/workflows/orto-quick-build.yml)
 - [ORTO Windows Portable Build](https://github.com/ORTO-INNOVATIONS/ORTO-OrcaSlicer/actions/workflows/orto-windows-build.yml)
+- [Publish ORTO Portable Release](https://github.com/ORTO-INNOVATIONS/ORTO-OrcaSlicer/actions/workflows/orto-publish-release.yml)
 
 ### Варианты сборки
 
@@ -113,7 +114,7 @@ orto-orca-slicer.exe ^
 
 **ORTO Windows Portable Build** — основной workflow для сборки Windows Portable. Он использует проверенный Quick Build и не запускает upstream-процедуру упаковки установщика.
 
-Полная универсальная сборка OrcaSlicer из upstream в рамках ORTO-дистрибутива не используется.
+Публикация GitHub Release выполняется отдельным workflow после успешной сборки Portable. В релиз загружается только Windows x64 Portable ZIP; версия тега обязана совпадать с `version.inc`.
 
 ### Правила разработки
 
