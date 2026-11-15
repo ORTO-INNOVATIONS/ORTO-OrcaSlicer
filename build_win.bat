@@ -220,7 +220,7 @@ if not "%vs_version%" == "" if "%use_ninja%" == "ON" (
     echo --vs and --ninja select different generators.
     exit /b 1
 )
-REM install(TARGETS OrcaSlicer) carries no OPTIONAL, so installing a tree
+REM install(TARGETS OrcaSlicer_app_gui) carries no OPTIONAL, so installing a tree
 REM whose executable was never built fails. Say so before the build starts.
 if "%build_slicer%" == "ON" if "%install_slicer%" == "ON" if not "%slicer_target%" == "" if /I not "%slicer_target%" == "OrcaSlicer" if /I not "%slicer_target%" == "OrcaSlicer_app_gui" (
     echo --install needs the executable, but --slicer-target names "%slicer_target%".
