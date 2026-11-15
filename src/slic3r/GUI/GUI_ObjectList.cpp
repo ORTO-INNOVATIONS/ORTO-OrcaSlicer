@@ -2834,7 +2834,7 @@ void ObjectList::prepare_orto_shell()
     Transform3d shell_transform = shell->get_matrix();
     const Eigen::Matrix3d rotate_x =
         Eigen::AngleAxisd(0.5 * PI, Vec3d::UnitX()).toRotationMatrix();
-    shell_transform.block<3, 3>(0, 0) = rotate_x * shell_transform.block<3, 3>(0, 0);
+    shell_transform.linear() = rotate_x * shell_transform.linear();
     shell->set_transformation(shell_transform);
     model_object.invalidate_bounding_box();
 
