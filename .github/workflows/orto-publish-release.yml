@@ -63,7 +63,12 @@ jobs:
             echo "::error::No artifact directory was downloaded."
             exit 1
           fi
-          (cd artifacts && zip -qr "../upload/ORTO-OrcaSlicer-Windows-x64-Portable-$VERSION.zip" .)
+          artifact_dir=$(find artifacts -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          if [ -z "$artifact_dir" ]; then
+            echo "::error::Portable artifact folder was not found."
+            exit 1
+          fi
+          (cd "$artifact_dir" && zip -qr "$GITHUB_WORKSPACE/upload/ORTO-OrcaSlicer-Windows-x64-Portable-$VERSION.zip" .)
           test -s "upload/ORTO-OrcaSlicer-Windows-x64-Portable-$VERSION.zip"
 
       - name: Create GitHub Release
