@@ -491,6 +491,20 @@ if ("${CMAKE_PREFIX_PATH}" STREQUAL "" OR REGEN_DESTDIR)
 else ()
     message(STATUS "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH} (from cache or command line)")
 endif ()
+
+# CMake find_* commands need absolute prefixes here. Older build trees may
+# retain a relative CMAKE_PREFIX_PATH in CMakeCache.txt even after DEP_BUILD_DIR
+# has been normalized above. Normalize every entry before package discovery.
+set(_ORTO_NORMALIZED_PREFIX_PATH "")
+foreach (_ORTO_PREFIX_ENTRY IN LISTS CMAKE_PREFIX_PATH)
+    if (NOT IS_ABSOLUTE "${_ORTO_PREFIX_ENTRY}")
+        get_filename_component(_ORTO_PREFIX_ENTRY "${_ORTO_PREFIX_ENTRY}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+    endif ()
+    list(APPEND _ORTO_NORMALIZED_PREFIX_PATH "${_ORTO_PREFIX_ENTRY}")
+endforeach ()
+set(CMAKE_PREFIX_PATH "${_ORTO_NORMALIZED_PREFIX_PATH}" CACHE STRING "Path to dependencies install directory" FORCE)
+message(STATUS "CMAKE_PREFIX_PATH (normalized): ${CMAKE_PREFIX_PATH}")
+
 set(PREFIX_PATH_CHECK ${CMAKE_PREFIX_PATH})
 
 # the CMAKE_PREFIX_PATH environment variable is separate from the CMAKE_PREFIX_PATH cache variable and provides additional paths to search for libraries.
