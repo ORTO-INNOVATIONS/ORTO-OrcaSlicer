@@ -222,12 +222,12 @@ if not "%vs_version%" == "" if "%use_ninja%" == "ON" (
 )
 REM install(TARGETS OrcaSlicer) carries no OPTIONAL, so installing a tree
 REM whose executable was never built fails. Say so before the build starts.
-if "%build_slicer%" == "ON" if "%install_slicer%" == "ON" if not "%slicer_target%" == "" if /I not "%slicer_target%" == "OrcaSlicer" (
+if "%build_slicer%" == "ON" if "%install_slicer%" == "ON" if not "%slicer_target%" == "" if /I not "%slicer_target%" == "OrcaSlicer" if /I not "%slicer_target%" == "OrcaSlicer_app_gui" (
     echo --install needs the executable, but --slicer-target names "%slicer_target%".
     exit /b 1
 )
 REM cpack runs the same install, so it has the same need.
-if "%make_installer%" == "ON" if not "%slicer_target%" == "" if /I not "%slicer_target%" == "OrcaSlicer" (
+if "%make_installer%" == "ON" if not "%slicer_target%" == "" if /I not "%slicer_target%" == "OrcaSlicer" if /I not "%slicer_target%" == "OrcaSlicer_app_gui" (
     echo --installer needs the executable, but --slicer-target names "%slicer_target%".
     exit /b 1
 )
@@ -845,6 +845,7 @@ REM worked out the same way in either run.
     set "linked=ON"
     if not "%slicer_target%" == "" set "linked="
     if /I "%slicer_target%" == "OrcaSlicer" set "linked=ON"
+    if /I "%slicer_target%" == "OrcaSlicer_app_gui" set "linked=ON"
 
     echo.
     echo -------------------------------------------------------------
