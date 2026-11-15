@@ -32,5 +32,5 @@ jobs:
     name: Build ORTO Windows Portable
     uses: ./.github/workflows/orto-quick-build.yml
     with:
-      force-build: ${{ inputs.force-build || false }}
+      force-build: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force-build == 'true' }}
     secrets: inherit
