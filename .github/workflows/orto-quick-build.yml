@@ -103,15 +103,15 @@ jobs:
             '--build-dir', $env:BUILD_DIR,
             '--deps-dir', $env:DEPS_DIR,
             '-l', '-x',
-            '--slicer-target', 'OrcaSlicer',
+            '--slicer-target', 'OrcaSlicer_app_gui',
             '--no-gettext'
           )
 
-          # A restored Ninja tree already has a valid CMake graph. On a cold
-          # cache, configure once; subsequent runs use Ninja's dependency graph.
+          # Refresh the CMake graph on every run so changes to CMakeLists.txt,
+          # target names and output names are applied to a restored Ninja tree.
+          # Ninja still recompiles only sources whose dependencies changed.
           if ("${{ steps.build-cache.outputs.cache-hit }}" -eq 'true') {
-            $buildArgs += '--no-configure'
-            Write-Host 'Restored incremental build tree; compiling only changed targets.'
+            Write-Host 'Restored incremental build tree; refreshing CMake and compiling changed targets.'
           } else {
             Write-Host 'No incremental build tree found; performing the initial configure and build.'
           }
