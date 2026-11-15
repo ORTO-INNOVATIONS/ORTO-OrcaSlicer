@@ -2824,8 +2824,7 @@ void ObjectList::prepare_orto_shell()
         return;
     }
 
-    const BoundingBoxf3 original_bbox = model_object.instance_bounding_box(instance_idx);
-    if (!original_bbox.defined || shell->mesh().empty())
+    if (shell->mesh().empty())
         return;
 
     Plater::TakeSnapshot snapshot(plater, _u8L("ORTO: Prepare cosmetic shell"));
