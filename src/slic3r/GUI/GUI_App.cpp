@@ -1022,9 +1022,19 @@ void GUI_App::post_init()
                     // Resolve them through their vendor manifest, just like the native CLI loader.
                     if (!preset_bundle->resolve_preset_config(config, type, path,
                             ForwardCompatibilitySubstitutionRule::Enable, resolve_error, true)) {
-                        profile_error = "Не удалось разрешить наследование системного профиля:\n" + path +
-                            "\n\n" + resolve_error;
-                        return false;
+                        // A standalone exported JSON may no longer sit beside its vendor manifest.
+                        // In that case the installed parent preset is sufficient to flatten it.
+                        PresetCollection* collection = type == Preset::TYPE_PRINTER ? &preset_bundle->printers :
+                            (type == Preset::TYPE_PRINT ? &preset_bundle->prints : &preset_bundle->filaments);
+                        const Preset* parent = collection->find_preset2(inherits->value, true);
+                        if (parent == nullptr) {
+                            profile_error = "Не удалось разрешить наследование системного профиля:\n" + path +
+                                "\n\n" + resolve_error;
+                            return false;
+                        }
+                        DynamicPrintConfig resolved(parent->config);
+                        resolved.apply(config, true);
+                        config = std::move(resolved);
                     }
                 } else {
                     // User JSON files may be exported to an arbitrary folder. Resolve their
