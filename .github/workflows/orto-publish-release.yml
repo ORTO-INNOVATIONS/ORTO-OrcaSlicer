@@ -1,0 +1,94 @@
+name: Publish ORTO Portable Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Successful ORTO Windows Portable Build run ID'
+        required: true
+        type: string
+      tag:
+        description: 'Release tag (for this release: v2.6.0-ORTO.8)'
+        required: true
+        type: string
+        default: v2.6.0-ORTO.8
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    name: Publish Windows Portable release
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RUN_ID: ${{ inputs.run_id }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Checkout release documentation
+        uses: actions/checkout@v7
+        with:
+          ref: orto-dev
+          lfs: false
+
+      - name: Validate version and source build
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/.*set(SoftFever_VERSION "\(.*\)").*/\1/p' version.inc)
+          expected_tag="v$version"
+          if [ "$TAG" != "$expected_tag" ]; then
+            echo "::error::Tag $TAG does not match version.inc ($expected_tag)."
+            exit 1
+          fi
+          run=$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json conclusion,headBranch,workflowName)
+          conclusion=$(jq -r '.conclusion' <<< "$run")
+          branch=$(jq -r '.headBranch' <<< "$run")
+          workflow=$(jq -r '.workflowName' <<< "$run")
+          echo "Source workflow: $workflow; branch: $branch; conclusion: $conclusion"
+          if [ "$conclusion" != success ] || [ "$branch" != orto-dev ]; then
+            echo "::error::Source run must be successful and belong to orto-dev."
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Download portable artifact
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts upload
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --dir artifacts
+          find artifacts -maxdepth 2 -type f -print
+          if [ ! -d artifacts ]; then
+            echo "::error::No artifact directory was downloaded."
+            exit 1
+          fi
+          (cd artifacts && zip -qr "../upload/ORTO-OrcaSlicer-Windows-x64-Portable-$VERSION.zip" .)
+          test -s "upload/ORTO-OrcaSlicer-Windows-x64-Portable-$VERSION.zip"
+
+      - name: Create GitHub Release
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<EOF
+          # ORTO OrcaSlicer $VERSION
+
+          Специализированная сборка OrcaSlicer для интеграции с производственной экосистемой ORTO.
+
+          ## Что входит
+          - Автоматизированная подготовка косметических оболочек протезов.
+          - Поворот модели на +90° вокруг оси X и размещение на высоте 3 мм над столом.
+          - Создание штатного Support Blocker.
+          - Загрузка профилей принтера, процесса и филамента из JSON.
+          - Визуальная проверка расположения шва оператором перед экспортом G-code.
+
+          ## Формат распространения
+          Только Windows x64 Portable. Установщик не предоставляется.
+
+          ## Установка
+          Распакуйте архив в отдельный каталог и укажите путь к `orto-orca-slicer.exe` в настройках интеграции ORTO.
+          EOF
+          gh release create "$TAG" "upload/ORTO-OrcaSlicer-Windows-x64-Portable-$VERSION.zip" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "ORTO OrcaSlicer $VERSION" \
+            --notes-file release-notes.md \
+            --target orto-dev
