@@ -74,9 +74,9 @@ jobs:
         run: |
           Write-Host 'Dependency cache miss. Building dependencies once to bootstrap the Quick Build cache.'
           choco install strawberryperl -y --no-progress
-          & .\\build_win.bat -d --arch x64 --deps-dir $env:DEPS_DIR -l -x
+          & .\build_win.bat -d --arch x64 --deps-dir $env:DEPS_DIR -l -x
           if ($LASTEXITCODE -ne 0) {
-            throw \"Dependency build failed with exit code $LASTEXITCODE.\"
+            throw "Dependency build failed with exit code $LASTEXITCODE."
           }
 
       - name: Save dependency cache
