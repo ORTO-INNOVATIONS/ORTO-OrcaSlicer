@@ -1,0 +1,105 @@
+name: ORTO Quick Build
+
+on:
+  push:
+    branches:
+      - orto-dev
+    paths:
+      - 'src/**'
+      - 'libslic3r/**'
+      - 'slic3r/**'
+      - '**/CMakeLists.txt'
+      - 'version.inc'
+      - 'build_win.bat'
+      - '.github/workflows/orto-quick-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Keep one writer for the mutable incremental build cache.
+concurrency:
+  group: orto-quick-build-windows-x64
+  cancel-in-progress: true
+
+jobs:
+  quick-build:
+    name: Incremental Windows x64 (Clang + Ninja)
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    env:
+      BUILD_DIR: build
+      DEPS_DIR: deps/build/OrcaSlicer_dep
+      BUILD_CACHE_KEY: orto-quick-build-windows-x64-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          lfs: false
+
+      - name: Restore dependencies
+        id: deps-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: deps/build/OrcaSlicer_dep
+          key: windows-x64-clang-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }}
+          fail-on-cache-miss: true
+
+      - name: Restore incremental build tree
+        id: build-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: build
+          key: ${{ env.BUILD_CACHE_KEY }}
+          restore-keys: |
+            orto-quick-build-windows-x64-
+
+      - name: Setup MSBuild environment
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Configure and build OrcaSlicer
+        shell: pwsh
+        run: |
+          $buildArgs = @(
+            '-s', '-i',
+            '--arch', 'x64',
+            '--build-dir', $env:BUILD_DIR,
+            '--deps-dir', $env:DEPS_DIR,
+            '-l', '-x',
+            '--slicer-target', 'OrcaSlicer',
+            '--no-gettext'
+          )
+
+          # A restored Ninja tree already has a valid CMake graph. On a cold
+          # cache, configure once; subsequent runs use Ninja's dependency graph.
+          if ("${{ steps.build-cache.outputs.cache-hit }}" -eq 'true') {
+            $buildArgs += '--no-configure'
+            Write-Host 'Restored incremental build tree; compiling only changed targets.'
+          } else {
+            Write-Host 'No incremental build tree found; performing the initial configure and build.'
+          }
+
+          & .\build_win.bat @buildArgs
+          if ($LASTEXITCODE -ne 0) {
+            throw "OrcaSlicer quick build failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Upload portable OrcaSlicer
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ORTO-OrcaSlicer-Quick-Windows-x64-${{ github.sha }}
+          path: build/OrcaSlicer
+          if-no-files-found: error
+          retention-days: 7
+
+      # Save the Ninja graph and object files even after a compiler failure:
+      # the next run can reuse everything that was built successfully.
+      - name: Save incremental build tree
+        if: always() && steps.build-cache.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: build
+          key: ${{ env.BUILD_CACHE_KEY }}
