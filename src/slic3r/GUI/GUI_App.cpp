@@ -968,7 +968,7 @@ void GUI_App::post_init()
 
         auto read_startup_preset = [&](const std::string& path, bool filament_argument) -> bool {
             if (!boost::filesystem::exists(path)) {
-                profile_error = "Файл профиля не найден:\\n" + path;
+                profile_error = "Файл профиля не найден:\n" + path;
                 return false;
             }
 
@@ -978,18 +978,18 @@ void GUI_App::post_init()
             try {
                 config.load_from_json(path, ForwardCompatibilitySubstitutionRule::Enable, key_values, reason);
             } catch (const std::exception& ex) {
-                profile_error = "Не удалось прочитать профиль:\\n" + path + "\\n\\n" + ex.what();
+                profile_error = "Не удалось прочитать профиль:\n" + path + "\n\n" + ex.what();
                 return false;
             }
             if (!reason.empty()) {
-                profile_error = "Некорректный JSON-профиль:\\n" + path + "\\n\\n" + reason;
+                profile_error = "Некорректный JSON-профиль:\n" + path + "\n\n" + reason;
                 return false;
             }
 
             const auto name_it = key_values.find(BBL_JSON_KEY_NAME);
             const auto type_it = key_values.find(BBL_JSON_KEY_TYPE);
             if (name_it == key_values.end() || name_it->second.empty() || type_it == key_values.end()) {
-                profile_error = "В JSON-профиле отсутствуют обязательные поля type или name:\\n" + path;
+                profile_error = "В JSON-профиле отсутствуют обязательные поля type или name:\n" + path;
                 return false;
             }
 
@@ -1001,17 +1001,47 @@ void GUI_App::post_init()
             else if (type_it->second == "filament" && filament_argument)
                 type = Preset::TYPE_FILAMENT;
             else {
-                profile_error = "Тип профиля не соответствует аргументу запуска:\\n" + path +
-                    "\\n\\nУказан type: " + type_it->second;
+                profile_error = "Тип профиля не соответствует аргументу запуска:\n" + path +
+                    "\n\nУказан type: " + type_it->second;
                 return false;
             }
 
-            std::string resolve_error;
-            if (!preset_bundle->resolve_preset_config(config, type, path,
-                    ForwardCompatibilitySubstitutionRule::Enable, resolve_error)) {
-                profile_error = "Не удалось разрешить наследование профиля:\\n" + path +
-                    "\\n\\n" + resolve_error;
+            config.normalize_fdm();
+            const auto from_it = key_values.find(BBL_JSON_KEY_FROM);
+            if (from_it == key_values.end() ||
+                (from_it->second != "system" && from_it->second != "User" && from_it->second != "user")) {
+                profile_error = "В профиле указано неподдерживаемое значение поля from:\n" + path;
                 return false;
+            }
+
+            const auto* inherits = config.option<ConfigOptionString>(BBL_JSON_KEY_INHERITS);
+            if (inherits != nullptr && !inherits->value.empty()) {
+                std::string resolve_error;
+                if (from_it->second == "system") {
+                    // System profiles may be supplied outside the installed preset folder.
+                    // Resolve them through their vendor manifest, just like the native CLI loader.
+                    if (!preset_bundle->resolve_preset_config(config, type, path,
+                            ForwardCompatibilitySubstitutionRule::Enable, resolve_error, true)) {
+                        profile_error = "Не удалось разрешить наследование системного профиля:\n" + path +
+                            "\n\n" + resolve_error;
+                        return false;
+                    }
+                } else {
+                    // User JSON files may be exported to an arbitrary folder. Resolve their
+                    // parent from the already loaded native preset collection, then apply only
+                    // the values explicitly present in the supplied JSON.
+                    PresetCollection* collection = type == Preset::TYPE_PRINTER ? &preset_bundle->printers :
+                        (type == Preset::TYPE_PRINT ? &preset_bundle->prints : &preset_bundle->filaments);
+                    const Preset* parent = collection->find_preset2(inherits->value, true);
+                    if (parent == nullptr) {
+                        profile_error = "Не найден родительский профиль '" + inherits->value +
+                            "' для файла:\n" + path;
+                        return false;
+                    }
+                    DynamicPrintConfig resolved(parent->config);
+                    resolved.apply(config, true);
+                    config = std::move(resolved);
+                }
             }
 
             StartupPreset preset{ type, path, name_it->second, std::move(config), get_version_from_json(path) };
