@@ -1,5 +1,14 @@
 # ORTO OrcaSlicer
 
+**Текущая версия: `2.6.0-ORTO.8`**  
+Первый зафиксированный релиз ORTO Edition на базе OrcaSlicer 2.6.0.
+
+## Описание релиза 2.6.0-ORTO.8
+
+Релиз предназначен для интеграции с производственной системой ORTO и подготовки косметических оболочек протезов. Включает автоматизированное позиционирование модели, создание штатного Support Blocker, загрузку профилей принтера/процесса/филамента из JSON и передачу управления оператору для проверки шва и экспорта G-code.
+
+Распространяется **только Windows Portable**. Установщик, MSI/MSIX и другие варианты установки в ORTO-дистрибутив не входят. Для работы используется отдельный каталог Portable-сборки, путь к которой задаётся в ORTO.
+
 **ORTO OrcaSlicer** — специализированная сборка [OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer), предназначенная для работы в составе производственной экосистемы **ORTO**.
 
 Форк используется как специализированный инструмент подготовки косметических оболочек протезов. Основной сценарий — запуск слайсера управляющей системой ORTO, передача модели и профилей печати, автоматическая подготовка модели и последующая проверка результата оператором.
@@ -73,7 +82,7 @@ orto-orca-slicer.exe ^
 
 ## Windows Portable
 
-Для производственного рабочего места используется отдельная Portable-сборка ORTO OrcaSlicer.
+Для производственного рабочего места используется отдельная Portable-сборка ORTO OrcaSlicer. Это единственный поддерживаемый формат распространения ORTO Edition; инсталлятор не собирается и не публикуется.
 
 Рекомендуемый принцип развёртывания:
 
@@ -96,14 +105,15 @@ orto-orca-slicer.exe ^
 - [История изменений ветки orto-dev](https://github.com/ORTO-INNOVATIONS/ORTO-OrcaSlicer/commits/orto-dev)
 - [GitHub Actions](https://github.com/ORTO-INNOVATIONS/ORTO-OrcaSlicer/actions)
 - [ORTO Quick Build](https://github.com/ORTO-INNOVATIONS/ORTO-OrcaSlicer/actions/workflows/orto-quick-build.yml)
+- [ORTO Windows Portable Build](https://github.com/ORTO-INNOVATIONS/ORTO-OrcaSlicer/actions/workflows/orto-windows-build.yml)
 
 ### Варианты сборки
 
-**ORTO Quick Build** — ускоренная Windows-сборка для проверки изменений и получения тестового Portable-артефакта.
+**ORTO Quick Build** — ускоренная инкрементальная Windows-сборка, создающая только Portable-артефакт.
 
-**Полная сборка** — сборка OrcaSlicer со всеми необходимыми компонентами по официальным инструкциям:
+**ORTO Windows Portable Build** — основной workflow для сборки Windows Portable. Он использует проверенный Quick Build и не запускает upstream-процедуру упаковки установщика.
 
-[OrcaSlicer — How to build](https://www.orcaslicer.com/wiki/how_to_build).
+Полная универсальная сборка OrcaSlicer из upstream в рамках ORTO-дистрибутива не используется.
 
 ### Правила разработки
 
