@@ -42,16 +42,18 @@ jobs:
             echo "::error::Tag $TAG does not match version.inc ($expected_tag)."
             exit 1
           fi
-          run=$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json conclusion,headBranch,workflowName)
+          run=$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json conclusion,headBranch,headSha,workflowName)
           conclusion=$(jq -r '.conclusion' <<< "$run")
           branch=$(jq -r '.headBranch' <<< "$run")
           workflow=$(jq -r '.workflowName' <<< "$run")
+          target_sha=$(jq -r '.headSha' <<< "$run")
           echo "Source workflow: $workflow; branch: $branch; conclusion: $conclusion"
-          if [ "$conclusion" != success ] || [ "$branch" != orto-dev ]; then
+          if [ "$conclusion" != success ] || [ "$branch" != orto-dev ] || { [ "$workflow" != "ORTO Windows Portable Build" ] && [ "$workflow" != "ORTO Quick Build" ]; }; then
             echo "::error::Source run must be successful and belong to orto-dev."
             exit 1
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "TARGET_SHA=$target_sha" >> "$GITHUB_ENV"
 
       - name: Download portable artifact
         run: |
@@ -96,4 +98,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "ORTO OrcaSlicer $VERSION" \
             --notes-file release-notes.md \
-            --target orto-dev
+            --target "$TARGET_SHA"
