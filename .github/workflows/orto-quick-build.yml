@@ -44,8 +44,16 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: deps/build/OrcaSlicer_dep
+          # Match the exact cache key produced by build_check_cache.yml for Windows x64 Clang.
           key: windows-x64-clang-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }}
-          fail-on-cache-miss: true
+          # A missing deps cache is a real prerequisite problem; make it explicit below.
+          fail-on-cache-miss: false
+
+      - name: Verify dependency cache
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          throw 'Windows x64 Clang dependency cache is not available. Run ORTO Windows Build once to populate it, then retry Quick Build.'
 
       - name: Restore incremental build tree
         id: build-cache
