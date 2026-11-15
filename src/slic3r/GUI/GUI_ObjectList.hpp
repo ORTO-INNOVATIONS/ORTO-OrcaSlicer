@@ -322,6 +322,8 @@ public:
     void                load_generic_subobject(const std::string& type_name, const ModelVolumeType type, bool interactive = true);
     // ORTO: prepare a selected cosmetic shell for manual support painting and slicing.
     void                prepare_orto_shell();
+    // Prepare a specific newly loaded model object without relying on UI selection.
+    bool                prepare_orto_shell_for_object(int obj_idx, size_t instance_idx, bool show_errors = false);
     void                on_prepare_orto_shell(wxCommandEvent& event);
     void                load_shape_object(const std::string &type_name, bool interactive);
     void                load_mesh_object(const TriangleMesh &mesh, const wxString &name, bool center = true);
