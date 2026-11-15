@@ -1519,6 +1519,7 @@ int CLI::run(int argc, char **argv)
         params.argc = argc;
         params.argv = argv;
         params.load_configs = load_configs;
+        params.load_filaments = load_filaments;
         params.extra_config = std::move(m_extra_config);
 
         std::vector<std::string>    gcode_files;
