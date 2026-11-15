@@ -62,8 +62,8 @@
 
 ```bat
 orto-orca-slicer.exe ^
-  --load-settings "profiles\\printer.json;profiles\\process.json" ^
-  --load-filaments "profiles\\filament.json" ^
+  --load-settings "profiles\printer.json;profiles\process.json" ^
+  --load-filaments "profiles\filament.json" ^
   "model.stl"
 ```
 
