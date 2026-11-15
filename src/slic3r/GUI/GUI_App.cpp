@@ -987,22 +987,8 @@ void GUI_App::post_init()
             }
 
             const auto name_it = key_values.find(BBL_JSON_KEY_NAME);
-            const auto type_it = key_values.find(BBL_JSON_KEY_TYPE);
-            if (name_it == key_values.end() || name_it->second.empty() || type_it == key_values.end()) {
-                profile_error = "В JSON-профиле отсутствуют обязательные поля type или name:\n" + path;
-                return false;
-            }
-
-            Preset::Type type;
-            if (type_it->second == "machine" && !filament_argument)
-                type = Preset::TYPE_PRINTER;
-            else if (type_it->second == "process" && !filament_argument)
-                type = Preset::TYPE_PRINT;
-            else if (type_it->second == "filament" && filament_argument)
-                type = Preset::TYPE_FILAMENT;
-            else {
-                profile_error = "Тип профиля не соответствует аргументу запуска:\n" + path +
-                    "\n\nУказан type: " + type_it->second;
+            if (name_it == key_values.end() || name_it->second.empty()) {
+                profile_error = "В JSON-профиле отсутствует обязательное поле name:\n" + path;
                 return false;
             }
 
@@ -1010,6 +996,39 @@ void GUI_App::post_init()
             if (from_it == key_values.end() ||
                 (from_it->second != "system" && from_it->second != "User" && from_it->second != "user")) {
                 profile_error = "В профиле указано неподдерживаемое значение поля from:\n" + path;
+                return false;
+            }
+
+            // OrcaSlicer exports may omit the JSON "type" metadata. In that case,
+            // use the same native preset type detection as the CLI loader instead
+            // of rejecting an otherwise valid exported printer/process/filament.
+            std::string profile_type;
+            const auto type_it = key_values.find(BBL_JSON_KEY_TYPE);
+            if (type_it != key_values.end()) {
+                profile_type = type_it->second;
+            } else {
+                Preset::Type detected_type;
+                std::string detect_error;
+                if (!preset_bundle->resolve_preset_config_type(config, detected_type, path,
+                        ForwardCompatibilitySubstitutionRule::Enable, detect_error,
+                        from_it->second == "system")) {
+                    profile_error = "Не удалось определить тип JSON-профиля:\n" + path +
+                        "\n\n" + detect_error;
+                    return false;
+                }
+                profile_type = Preset::get_type_string(detected_type);
+            }
+
+            Preset::Type type;
+            if (profile_type == "machine" && !filament_argument)
+                type = Preset::TYPE_PRINTER;
+            else if (profile_type == "process" && !filament_argument)
+                type = Preset::TYPE_PRINT;
+            else if (profile_type == "filament" && filament_argument)
+                type = Preset::TYPE_FILAMENT;
+            else {
+                profile_error = "Тип профиля не соответствует аргументу запуска:\n" + path +
+                    "\n\nОпределён type: " + profile_type;
                 return false;
             }
 
