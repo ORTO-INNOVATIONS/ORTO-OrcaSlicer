@@ -25,6 +25,7 @@ struct GUI_InitParams
 	PresetsConfigSubstitutions  preset_substitutions;
 
     std::vector<std::string>    load_configs;
+    std::vector<std::string>    load_filaments;
     DynamicPrintConfig          extra_config;
     std::vector<std::string>    input_files;
 
