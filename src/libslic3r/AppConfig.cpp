@@ -524,6 +524,12 @@ void AppConfig::set_defaults()
         set_bool("show_splash_screen", true);
     }
 
+    // ORTO cosmetic shell preparation defaults (millimeters).
+    if (get("orto_shell_lift_mm").empty())
+        set("orto_shell_lift_mm", "3.0");
+    if (get("orto_support_blocker_lift_mm").empty())
+        set("orto_support_blocker_lift_mm", "20.0");
+
     if(get("auto_arrange").empty()) {
         set_bool("auto_arrange", true);
     }
