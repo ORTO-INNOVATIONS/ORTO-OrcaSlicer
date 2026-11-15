@@ -580,7 +580,7 @@ private:
     wxColour m_progress_bg_color;
     wxColour m_progress_fg_color;
 
-    wxString m_text_version = _L("ORTO Edition") + "  |  " + GUI_App::format_display_version();
+    wxString m_text_version = "ORTO OrcaSlicer" + "  |  " + GUI_App::format_display_version();
     wxString m_text_action  = _L("Loading configuration") + dots;
     int      m_progress     = 0;
     int      m_progress_h   = 6;
