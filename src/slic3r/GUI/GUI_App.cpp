@@ -975,7 +975,15 @@ void GUI_App::post_init()
                     input_files.push_back(wxString::FromUTF8(file));
                 }
                 this->plater()->set_project_filename(_L("Untitled"));
-                this->plater()->load_files(input_files);
+                const bool model_loaded = this->plater()->load_files(input_files);
+                // ORTO Edition: prepare only the model loaded by this startup CLI invocation.
+                // Use its model index directly; never infer the target from the current selection.
+                if (model_loaded && input_files.size() == 1 && this->plater()->model().objects.size() == 1) {
+                    if (wxGetApp().obj_list()->prepare_orto_shell_for_object(0, 0, false)) {
+                        wxMessageBox(_L("Убедитесь в расположении шва модели и можете экспортировать файл Gcode"),
+                                     _L("ORTO Slicer Prep"), wxOK | wxICON_INFORMATION, mainframe);
+                    }
+                }
                 try {
                     if (!input_files.empty()) {
                         std::string           file_path = input_files.front().ToStdString();
