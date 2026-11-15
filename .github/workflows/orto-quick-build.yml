@@ -30,7 +30,7 @@ jobs:
 
     env:
       BUILD_DIR: build
-      DEPS_DIR: deps/build/OrcaSlicer_dep
+      DEPS_DIR: deps/build
       BUILD_CACHE_KEY: orto-quick-build-windows-x64-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
@@ -48,12 +48,6 @@ jobs:
           key: windows-x64-clang-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }}
           # A missing deps cache is a real prerequisite problem; make it explicit below.
           fail-on-cache-miss: false
-
-      - name: Verify dependency cache
-        if: steps.deps-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          throw 'Windows x64 Clang dependency cache is not available. Run ORTO Windows Build once to populate it, then retry Quick Build.'
 
       - name: Restore incremental build tree
         id: build-cache
@@ -73,6 +67,24 @@ jobs:
 
       - name: Setup MSBuild environment
         uses: microsoft/setup-msbuild@v3
+
+      - name: Build dependencies on cache miss
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          Write-Host 'Dependency cache miss. Building dependencies once to bootstrap the Quick Build cache.'
+          choco install strawberryperl -y --no-progress
+          & .\\build_win.bat -d --arch x64 --deps-dir $env:DEPS_DIR -l -x
+          if ($LASTEXITCODE -ne 0) {
+            throw \"Dependency build failed with exit code $LASTEXITCODE.\"
+          }
+
+      - name: Save dependency cache
+        if: steps.deps-cache.outputs.cache-hit != 'true' && success()
+        uses: actions/cache/save@v6
+        with:
+          path: deps/build/OrcaSlicer_dep
+          key: windows-x64-clang-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }}
 
       - name: Configure and build OrcaSlicer
         shell: pwsh
