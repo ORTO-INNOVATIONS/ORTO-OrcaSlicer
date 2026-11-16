@@ -375,6 +375,41 @@ wxDEFINE_EVENT(EVT_NOTICE_FULL_SCREEN_CHANGED, IntEvent);
 #define PRINTER_PANEL_RADIUS (6) // ORCA
 #define BTN_SYNC_SIZE (wxSize(FromDIP(96), FromDIP(98)))
 
+
+// ORTO: Add a native Precise Seam Center modifier to imported prosthetic shells.
+// The modifier is a child volume of the same ModelObject, so it follows every
+// object transform (move, rotate and scale) without a separate synchronization path.
+static bool add_orto_seam_modifier(ModelObject& object)
+{
+    if (std::any_of(object.volumes.begin(), object.volumes.end(),
+        [](const ModelVolume* volume) { return volume->is_precise_seam(); }))
+        return false;
+
+    const BoundingBoxf3& bounds = object.raw_mesh_bounding_box();
+    if (bounds.empty())
+        return false;
+
+    constexpr double seam_width = 0.6;
+    constexpr double seam_half_width = seam_width / 2.0;
+    // The rear wall is on the positive-Y side of the ORTO shell coordinate system.
+    // Extend through the wall with an inward overlap and a small outside margin.
+    constexpr double seam_depth = 8.5;
+    constexpr double seam_outside_margin = 0.5;
+    constexpr double seam_z_margin = 0.5;
+
+    const double z_min = bounds.min(2) - seam_z_margin;
+    const double z_size = bounds.size()(2) + 2.0 * seam_z_margin;
+    const double y_max = bounds.max(1) + seam_outside_margin;
+    const double y_min = y_max - seam_depth;
+
+    TriangleMesh mesh = make_cube(seam_width, seam_depth, z_size);
+    ModelVolume* modifier = object.add_volume(std::move(mesh), ModelVolumeType::PRECISE_SEAM_CENTER, false);
+    modifier->name = "ORTO Seam Modifier";
+    modifier->set_offset(Vec3d(-seam_half_width, y_min, z_min));
+    object.invalidate_bounding_box();
+    return true;
+}
+
 static std::string get_diameter_string(float diameter)
 {
     std::ostringstream stream; // ORCA ensure 0.25 returned as 0.25. previous code returned as 0.2 because of std::setprecision(1)
@@ -10300,8 +10335,13 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
             }
 
             BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ":" << __LINE__ << boost::format(", before load_model_objects, count %1%")%model.objects.size();
-            auto loaded_idxs = load_model_objects(model.objects, is_project_file, false, true,
+            auto loaded_idxs = load_model_objects(model.objects, is_project_file, false, false,
                 stage_geometry ? &import_display_options : nullptr);
+            if (!is_project_file) {
+                for (size_t idx : loaded_idxs)
+                    if (idx < q->model().objects.size())
+                        add_orto_seam_modifier(*q->model().objects[idx]);
+            }
             obj_idxs.insert(obj_idxs.end(), loaded_idxs.begin(), loaded_idxs.end());
 
             // load_model_objects only transfers ModelObjects; carry the Model-level CAD recipe
@@ -10343,13 +10383,13 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
     if (new_model != nullptr && new_model->objects.size() > 1) {
         //BBS do not popup this dialog
 
-        bool new_model_auto_drop = true;
+        bool new_model_auto_drop = false;
         int single_object_answer = false;
         if (ask_multi) {
             RichMessageDialog dlg(q, _L("Load these files as a single object with multiple parts?\n"),
                 _L("An object with multiple parts was detected"), wxICON_QUESTION | wxYES_NO);
 
-            dlg.ShowCheckBox(_L("Auto-Drop"), true);
+            dlg.ShowCheckBox(_L("Auto-Drop"), false);
             single_object_answer = dlg.ShowModal();
 
             if (dlg.IsCheckBoxChecked() == false) 
@@ -10386,6 +10426,9 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
 
         auto loaded_idxs = load_model_objects(new_model->objects, false, false, new_model_auto_drop,
             stage_geometry ? &import_display_options : nullptr);
+        for (size_t idx : loaded_idxs)
+            if (idx < q->model().objects.size())
+                add_orto_seam_modifier(*q->model().objects[idx]);
         obj_idxs.insert(obj_idxs.end(), loaded_idxs.begin(), loaded_idxs.end());
 
         if (single_object_answer == wxID_NO && new_model_auto_drop == false) {
