@@ -2854,6 +2854,10 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
     Transform3d shell_transform = shell->get_matrix();
     const Eigen::Matrix3d rotate_x =
         Eigen::AngleAxisd(0.5 * PI, Vec3d::UnitX()).toRotationMatrix();
+    const BoundingBoxf3 shell_mesh_bounds = shell->mesh().bounding_box();
+    if (!shell_mesh_bounds.defined)
+        return false;
+
     shell_transform.linear() = rotate_x * shell_transform.linear();
     shell->set_transformation(shell_transform);
     model_object.invalidate_bounding_box();
@@ -2887,23 +2891,34 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
     if (!shell_bbox.defined)
         return false;
 
-    // Create a native support blocker covering the complete build-plate XY area
-    // and the shell, with a 10 mm safety margin. Its lower face is 20 mm above
-    // the plate, so supports remain possible only in the first 20 mm of height.
-    constexpr double blocker_margin = 10.0;
-    constexpr double blocker_height = 700.0;
-    const BoundingBoxf bed_bbox = plater->build_volume().bounding_volume2d();
-    if (!bed_bbox.defined)
-        return false;
+    // Add the seam modifier in the shell's own transformed coordinate system.
+    // Copying the shell's linear transform makes the seam rotate with the shell
+    // instead of remaining aligned to the unrotated object axes.
+    if (!std::any_of(model_object.volumes.begin(), model_object.volumes.end(),
+        [](const ModelVolume* volume) { return volume->is_precise_seam(); })) {
+        constexpr double seam_width = 0.6;
+        constexpr double seam_outside_margin = 2.0;
+        const double seam_y_size = shell_mesh_bounds.max(1) + seam_outside_margin;
+        if (seam_y_size > 0.0) {
+            TriangleMesh seam_mesh = make_cube(seam_width, seam_y_size, shell_mesh_bounds.size().z());
+            ModelVolume* seam = model_object.add_volume(std::move(seam_mesh),
+                ModelVolumeType::PRECISE_SEAM_CENTER, false);
+            seam->name = "ORTO Seam Modifier";
+            Transform3d seam_transform = shell_transform;
+            seam_transform.translation() += shell_transform.linear() *
+                Vec3d(-seam_width * 0.5, 0.0, shell_mesh_bounds.min(2));
+            seam->set_transformation(seam_transform);
+        }
+    }
 
-    const double blocker_min_x = std::min(shell_bbox.min.x(), bed_bbox.min.x()) - blocker_margin;
-    const double blocker_min_y = std::min(shell_bbox.min.y(), bed_bbox.min.y()) - blocker_margin;
-    const double blocker_max_x = std::max(shell_bbox.max.x(), bed_bbox.max.x()) + blocker_margin;
-    const double blocker_max_y = std::max(shell_bbox.max.y(), bed_bbox.max.y()) + blocker_margin;
-    const double blocker_width = blocker_max_x - blocker_min_x;
-    const double blocker_depth = blocker_max_y - blocker_min_y;
-    const Vec3d blocker_world_center((blocker_min_x + blocker_max_x) * 0.5,
-                                     (blocker_min_y + blocker_max_y) * 0.5,
+    // Create a compact support blocker around the transformed shell, with 2 mm
+    // clearance on each X/Y side. Keep its lower face at the configured world Z.
+    constexpr double blocker_xy_margin = 2.0;
+    constexpr double blocker_height = 700.0;
+    const double blocker_width = shell_bbox.size().x() + 2.0 * blocker_xy_margin;
+    const double blocker_depth = shell_bbox.size().y() + 2.0 * blocker_xy_margin;
+    const Vec3d blocker_world_center((shell_bbox.min.x() + shell_bbox.max.x()) * 0.5,
+                                     (shell_bbox.min.y() + shell_bbox.max.y()) * 0.5,
                                      blocker_bottom_z + blocker_height * 0.5);
 
     TriangleMesh blocker_mesh(its_make_cube(blocker_width, blocker_depth, blocker_height));
