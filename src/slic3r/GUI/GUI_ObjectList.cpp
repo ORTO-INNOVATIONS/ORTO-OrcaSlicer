@@ -2847,21 +2847,6 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
     if (shell->mesh().empty())
         return false;
 
-    Plater::TakeSnapshot snapshot(plater, _u8L("ORTO: Prepare cosmetic shell"));
-
-    // Match the reference 3MF: rotate the shell volume +90 degrees around its local X axis.
-    // Premultiply only the linear part so the volume's existing local offset is preserved.
-    Transform3d shell_transform = shell->get_matrix();
-    const Eigen::Matrix3d rotate_x =
-        Eigen::AngleAxisd(0.5 * PI, Vec3d::UnitX()).toRotationMatrix();
-    const BoundingBoxf3 shell_mesh_bounds = shell->mesh().bounding_box();
-    if (!shell_mesh_bounds.defined)
-        return false;
-
-    shell_transform.linear() = rotate_x * shell_transform.linear();
-    shell->set_transformation(shell_transform);
-    model_object.invalidate_bounding_box();
-
     // Read ORTO preparation heights from user preferences (millimeters).
     const auto read_orto_height = [](const char* key, double fallback) {
         const std::string configured = wxGetApp().app_config->get(key);
@@ -2880,85 +2865,98 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
     const double shell_lift_height = read_orto_height("orto_shell_lift_mm", 3.0);
     const double blocker_bottom_z = read_orto_height("orto_support_blocker_lift_mm", 20.0);
 
-    // Calculate the actual transformed shell bounds, then place its lowest point
-    // at the configured height above the build plate.
+    const BoundingBoxf3 shell_mesh_bounds = shell->mesh().bounding_box();
+    if (!shell_mesh_bounds.defined)
+        return false;
+
+    const Transform3d original_shell_transform = shell->get_matrix();
+    Transform3d shell_transform = original_shell_transform;
+    const Eigen::Matrix3d rotate_x =
+        Eigen::AngleAxisd(0.5 * PI, Vec3d::UnitX()).toRotationMatrix();
+    shell_transform.linear() = rotate_x * shell_transform.linear();
+
+    // Preflight the transformed shell bounds without leaving the model modified
+    // if any geometry validation below fails.
+    shell->set_transformation(shell_transform);
+    model_object.invalidate_bounding_box();
     BoundingBoxf3 shell_bbox = model_object.instance_bounding_box(instance_idx);
+    shell->set_transformation(original_shell_transform);
+    model_object.invalidate_bounding_box();
     if (!shell_bbox.defined)
         return false;
+
     const double lift_z = shell_lift_height - shell_bbox.min.z();
-    model_object.translate_instance(instance_idx, Vec3d(0.0, 0.0, lift_z));
-    shell_bbox = model_object.instance_bounding_box(instance_idx);
-    if (!shell_bbox.defined)
+    shell_bbox.translate(Vec3d(0.0, 0.0, lift_z));
+    if (!shell_bbox.defined || shell_bbox.size().x() <= 0.0 ||
+        shell_bbox.size().y() <= 0.0 || shell_bbox.size().z() <= 0.0)
         return false;
 
-    // The seam is defined by the ORIGINAL STL coordinate system:
-    // X=0 is the slit center plane. After the +90 degree X rotation, original
-    // local Y becomes vertical (world Z), and original local Z becomes depth.
-    // Keep the modifier in the shell volume's own transform so it follows every
-    // shell transform; do not infer the slit from the post-transform bounding-box center.
-    if (!std::any_of(model_object.volumes.begin(), model_object.volumes.end(),
-        [](const ModelVolume* volume) { return volume->is_precise_seam(); })) {
-        // After the +90 degree X rotation, positive source Z maps toward negative
-        // world Y, which is the slit side shown in the reference screenshot.
-        // The rendered modifier was twice the requested thickness: use 0.3 mm
-        // mesh thickness to obtain the required 0.6 mm effective seam width.
-        constexpr double seam_width = 0.3;
-        constexpr double seam_x_offset = -7.0;
-        constexpr double seam_outside_margin = 2.0;
-        const double seam_depth_min = 0.0;
-        const double seam_depth_max = shell_mesh_bounds.max(2) + seam_outside_margin;
-        const double seam_depth = seam_depth_max - seam_depth_min;
+    // The seam follows the original STL X=0 plane. STL import centers the mesh
+    // and stores the removed origin in source.mesh_offset.
+    constexpr double seam_width = 0.6;
+    const double seam_x_offset = -shell->source.mesh_offset.x();
+    constexpr double seam_outside_margin = 2.0;
+    const double seam_depth_min = 0.0;
+    const double seam_depth_max = shell_mesh_bounds.max(2) + seam_outside_margin;
+    const double seam_depth = seam_depth_max - seam_depth_min;
 
-        // Solve the original local Y coordinate that maps to build-plate Z=0.
-        // Use the full instance * volume transform, because the STL may be offset
-        // from the origin and its position changes when rotated.
-        const Transform3d instance_matrix =
-            model_object.instances[instance_idx]->get_transformation().get_matrix();
-        const Transform3d shell_world_transform = instance_matrix * shell_transform;
-        const double vertical_world_per_local_y = shell_world_transform.linear()(2, 1);
-        if (std::abs(vertical_world_per_local_y) > 1e-8 && seam_depth > 0.0) {
-            const double seam_y_min =
-                -(shell_world_transform.translation().z() +
-                  shell_world_transform.linear()(2, 2) * seam_depth_max) /
-                vertical_world_per_local_y;
-            const double seam_y_max = shell_mesh_bounds.max(1) + seam_outside_margin;
-            const double seam_height = seam_y_max - seam_y_min;
-            if (seam_height > 0.0) {
-                TriangleMesh seam_mesh = make_cube(seam_width, seam_height, seam_depth);
-                ModelVolume* seam = model_object.add_volume(std::move(seam_mesh),
-                    ModelVolumeType::PRECISE_SEAM_CENTER, false);
-                seam->name = "ORTO Seam Modifier";
-                Transform3d seam_transform = shell_transform;
-                seam_transform.translation() += shell_transform.linear() *
-                    Vec3d(seam_x_offset - seam_width * 0.5, seam_y_min, seam_depth_min);
-                seam->set_transformation(seam_transform);
-            }
-        }
-    }
+    // Calculate the final instance transform in advance so seam placement and
+    // blocker dimensions are validated before the snapshot and any real edits.
+    const Transform3d instance_matrix =
+        model_object.instances[instance_idx]->get_transformation().get_matrix();
+    Transform3d prepared_instance_matrix = instance_matrix;
+    prepared_instance_matrix.translation().z() += lift_z;
+    const Transform3d shell_world_transform = prepared_instance_matrix * shell_transform;
+    const double vertical_world_per_local_y = shell_world_transform.linear()(2, 1);
+    if (std::abs(vertical_world_per_local_y) <= 1e-8 || seam_depth <= 0.0)
+        return false;
 
-    // Create a compact support blocker around the transformed shell, with 2 mm
-    // clearance on each X/Y side. Keep its lower face at the configured world Z.
+    const double seam_y_min =
+        -(shell_world_transform.translation().z() +
+          shell_world_transform.linear()(2, 2) * seam_depth_max) /
+        vertical_world_per_local_y;
+    const double seam_y_max = shell_mesh_bounds.max(1) + seam_outside_margin;
+    const double seam_height = seam_y_max - seam_y_min;
+    if (!std::isfinite(seam_x_offset) || !std::isfinite(seam_y_min) ||
+        !std::isfinite(seam_height) || seam_height <= 0.0)
+        return false;
+
+    // Keep the blocker bottom at its configured world Z and its top exactly
+    // 20 mm above the prepared shell (no artificial 100 mm minimum).
     constexpr double blocker_xy_margin = 2.0;
-    // Extend the blocker 20 mm above the prepared shell while keeping its
-    // configured lower face fixed relative to the build plate.
     constexpr double blocker_top_margin = 20.0;
-    const double blocker_height = std::max(100.0, shell_bbox.max.z() + blocker_top_margin - blocker_bottom_z);
+    const double blocker_height = shell_bbox.max.z() + blocker_top_margin - blocker_bottom_z;
     const double blocker_width = shell_bbox.size().x() + 2.0 * blocker_xy_margin;
     const double blocker_depth = shell_bbox.size().y() + 2.0 * blocker_xy_margin;
+    if (!std::isfinite(blocker_height) || blocker_height <= 0.0 ||
+        blocker_width <= 0.0 || blocker_depth <= 0.0)
+        return false;
+
     const Vec3d blocker_world_center((shell_bbox.min.x() + shell_bbox.max.x()) * 0.5,
                                      (shell_bbox.min.y() + shell_bbox.max.y()) * 0.5,
                                      blocker_bottom_z + blocker_height * 0.5);
 
+    // All expected failure conditions have been checked. Start the undoable edit.
+    Plater::TakeSnapshot snapshot(plater, _u8L("ORTO: Prepare cosmetic shell"));
+    shell->set_transformation(shell_transform);
+    model_object.translate_instance(instance_idx, Vec3d(0.0, 0.0, lift_z));
+
+    TriangleMesh seam_mesh = make_cube(seam_width, seam_height, seam_depth);
+    ModelVolume* seam = model_object.add_volume(std::move(seam_mesh),
+        ModelVolumeType::PRECISE_SEAM_CENTER, false);
+    seam->name = "ORTO Seam Modifier";
+    Transform3d seam_transform = shell_transform;
+    seam_transform.translation() += shell_transform.linear() *
+        Vec3d(seam_x_offset - seam_width * 0.5, seam_y_min, seam_depth_min);
+    seam->set_transformation(seam_transform);
+
+    // add_volume() centers newly-created meshes by default. Therefore the
+    // translation below is the blocker center, with no half-size correction.
     TriangleMesh blocker_mesh(its_make_cube(blocker_width, blocker_depth, blocker_height));
     ModelVolume* blocker = model_object.add_volume(std::move(blocker_mesh), ModelVolumeType::SUPPORT_BLOCKER);
-    if (blocker == nullptr)
-        return false;
-
-    // Counter-transform the instance so the blocker stays axis-aligned in world
-    // coordinates and retains its intended dimensions for rotated/scaled instances.
-    const Transform3d instance_matrix = model_object.instances[instance_idx]->get_transformation().get_matrix();
-    Transform3d blocker_transform = instance_matrix.inverse();
-    blocker_transform.translation() = instance_matrix.inverse() * blocker_world_center;
+    blocker->set_transformation(Transform3d::Identity());
+    Transform3d blocker_transform = prepared_instance_matrix.inverse();
+    blocker_transform.translation() = prepared_instance_matrix.inverse() * blocker_world_center;
     blocker->set_transformation(blocker_transform);
     blocker->name = "ORTO-Support-Blocker";
     blocker->source.is_from_builtin_objects = true;
