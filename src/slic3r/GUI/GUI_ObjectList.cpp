@@ -2954,7 +2954,6 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
     // translation below is the blocker center, with no half-size correction.
     TriangleMesh blocker_mesh(its_make_cube(blocker_width, blocker_depth, blocker_height));
     ModelVolume* blocker = model_object.add_volume(std::move(blocker_mesh), ModelVolumeType::SUPPORT_BLOCKER);
-    blocker->set_transformation(Transform3d::Identity());
     Transform3d blocker_transform = prepared_instance_matrix.inverse();
     blocker_transform.translation() = prepared_instance_matrix.inverse() * blocker_world_center;
     blocker->set_transformation(blocker_transform);
