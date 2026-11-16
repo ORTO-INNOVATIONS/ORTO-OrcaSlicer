@@ -2891,29 +2891,43 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
     if (!shell_bbox.defined)
         return false;
 
-    // Create the seam modifier in build-plate coordinates. The shell is already
-    // rotated and lifted, so use its final world bounds: the modifier starts at
-    // Z=0, reaches the top of the shell, and runs from the rear (+Y) to Y=0 only.
+    // The seam is defined by the ORIGINAL STL coordinate system:
+    // X=0 is the slit center plane. After the +90 degree X rotation, original
+    // local Y becomes vertical (world Z), and original local Z becomes depth.
+    // Keep the modifier in the shell volume's own transform so it follows every
+    // shell transform; do not infer the slit from the post-transform bounding-box center.
     if (!std::any_of(model_object.volumes.begin(), model_object.volumes.end(),
         [](const ModelVolume* volume) { return volume->is_precise_seam(); })) {
         constexpr double seam_width = 0.6;
-        const double seam_depth = shell_bbox.max.y();
-        const double seam_height = shell_bbox.max.z();
-        if (seam_depth > 0.0 && seam_height > 0.0) {
-            TriangleMesh seam_mesh = make_cube(seam_width, seam_depth, seam_height);
-            ModelVolume* seam = model_object.add_volume(std::move(seam_mesh),
-                ModelVolumeType::PRECISE_SEAM_CENTER, false);
-            seam->name = "ORTO Seam Modifier";
+        constexpr double seam_outside_margin = 2.0;
+        const double seam_depth_min = shell_mesh_bounds.min(2) - seam_outside_margin;
+        const double seam_depth_max = 0.0; // local zero plane: do not cross the opposite/front wall
+        const double seam_depth = seam_depth_max - seam_depth_min;
 
-            // Center the seam plane on the shell's X midline rather than assuming
-            // that the imported mesh is centered around local X=0.
-            const Transform3d instance_matrix =
-                model_object.instances[instance_idx]->get_transformation().get_matrix();
-            Transform3d seam_transform = Transform3d::Identity();
-            seam_transform.translation() = instance_matrix.inverse() *
-                Vec3d((shell_bbox.min.x() + shell_bbox.max.x()) * 0.5 - seam_width * 0.5,
-                      0.0, 0.0);
-            seam->set_transformation(seam_transform);
+        // Solve the original local Y coordinate that maps to build-plate Z=0.
+        // Use the full instance * volume transform, because the STL may be offset
+        // from the origin and its position changes when rotated.
+        const Transform3d instance_matrix =
+            model_object.instances[instance_idx]->get_transformation().get_matrix();
+        const Transform3d shell_world_transform = instance_matrix * shell_transform;
+        const double vertical_world_per_local_y = shell_world_transform.linear()(2, 1);
+        if (std::abs(vertical_world_per_local_y) > 1e-8 && seam_depth > 0.0) {
+            const double seam_y_min =
+                -(shell_world_transform.translation().z() +
+                  shell_world_transform.linear()(2, 2) * seam_depth_max) /
+                vertical_world_per_local_y;
+            const double seam_y_max = shell_mesh_bounds.max(1) + seam_outside_margin;
+            const double seam_height = seam_y_max - seam_y_min;
+            if (seam_height > 0.0) {
+                TriangleMesh seam_mesh = make_cube(seam_width, seam_height, seam_depth);
+                ModelVolume* seam = model_object.add_volume(std::move(seam_mesh),
+                    ModelVolumeType::PRECISE_SEAM_CENTER, false);
+                seam->name = "ORTO Seam Modifier";
+                Transform3d seam_transform = shell_transform;
+                seam_transform.translation() += shell_transform.linear() *
+                    Vec3d(-seam_width * 0.5, seam_y_min, seam_depth_min);
+                seam->set_transformation(seam_transform);
+            }
         }
     }
 
