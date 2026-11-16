@@ -48,15 +48,15 @@ vertices = [(x, y, z) for z in (0, 10) for y in (0, 10) for x in (0, 10)]
 triangles = ((0, 2, 3, 1), (4, 5, 7, 6), (0, 1, 5, 4),
              (2, 6, 7, 3), (0, 4, 6, 2), (1, 3, 7, 5))
 with open(os.path.join(work, "cube.stl"), "w", encoding="ascii") as f:
-    f.write("solid cube\\n")
+    f.write("solid cube\n")
     for a, b, c, d in triangles:
         for tri in ((vertices[a], vertices[b], vertices[c]),
                     (vertices[a], vertices[c], vertices[d])):
-            f.write("facet normal 0 0 0\\nouter loop\\n")
+            f.write("facet normal 0 0 0\nouter loop\n")
             for x, y, z in tri:
-                f.write("vertex %g %g %g\\n" % (x, y, z))
-            f.write("endloop\\nendfacet\\n")
-    f.write("endsolid cube\\n")
+                f.write("vertex %g %g %g\n" % (x, y, z))
+            f.write("endloop\nendfacet\n")
+    f.write("endsolid cube\n")
 EOF
 
 timeout 300 "$BIN" --datadir "$WORK/datadir" \
