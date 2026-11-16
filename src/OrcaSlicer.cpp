@@ -2432,6 +2432,46 @@ int CLI::run(int argc, char **argv)
             error = "Unsupported preset type: " + config_type;
             return false;
         }
+        if (config_from == "User" || config_from == "user") {
+            // User profiles passed through --load-settings / --load-filaments may live
+            // outside the active preset bundle. Resolve their inheritance from the
+            // already loaded system collection, matching GUI_App::read_startup_preset().
+            // Prefer exact source-file identity when the profile is already installed.
+            if (bundle->resolve_preset_config(config, preset_type, file, config_substitution_rule,
+                                              error, false))
+                return true;
+            if (error == "Preset identity is ambiguous")
+                return false;
+
+            const auto *user_inherits = config.option<ConfigOptionString>(BBL_JSON_KEY_INHERITS);
+            if (user_inherits == nullptr || user_inherits->value.empty())
+                return true;
+
+            PresetCollection *collection = nullptr;
+            switch (preset_type) {
+            case Preset::TYPE_PRINT:    collection = &bundle->prints;    break;
+            case Preset::TYPE_FILAMENT: collection = &bundle->filaments; break;
+            case Preset::TYPE_PRINTER:  collection = &bundle->printers;  break;
+            default:
+                error = "Unsupported preset type";
+                return false;
+            }
+
+            const Preset *parent = collection->find_preset2(user_inherits->value, true);
+            if (parent == nullptr) {
+                error = "Parent preset '" + user_inherits->value + "' was not found in the loaded bundle";
+                return false;
+            }
+
+            DynamicPrintConfig resolved(parent->config);
+            resolved.apply(config, true);
+            config = std::move(resolved);
+            error.clear();
+            BOOST_LOG_TRIVIAL(info) << "CLI: resolved external user preset '" << file
+                                    << "' from parent '" << user_inherits->value << "'";
+            return true;
+        }
+
         return bundle->resolve_preset_config(config, preset_type, file, config_substitution_rule,
                                              error, allow_source_manifest);
     };
