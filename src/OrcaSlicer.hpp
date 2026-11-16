@@ -71,6 +71,7 @@ private:
     // Options the user typed; setup() fills the CLI's own options with defaults afterwards.
     std::set<std::string>       m_given_option_keys;
     std::vector<Model>          m_models;
+    bool                        m_orto_headless{ false };
 
     bool setup(int argc, char **argv);
 
