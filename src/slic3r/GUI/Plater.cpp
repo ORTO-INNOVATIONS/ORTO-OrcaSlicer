@@ -10450,7 +10450,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
             stage_geometry ? &import_display_options : nullptr);
         for (size_t idx : loaded_idxs)
             if (idx < q->model().objects.size())
-                add_orto_seam_modifier(*q->model().objects[idx]);
+                add_orto_modifiers(*q->model().objects[idx]);
         obj_idxs.insert(obj_idxs.end(), loaded_idxs.begin(), loaded_idxs.end());
 
         if (single_object_answer == wxID_NO && new_model_auto_drop == false) {
