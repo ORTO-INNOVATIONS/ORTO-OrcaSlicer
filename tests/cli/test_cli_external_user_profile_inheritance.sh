@@ -24,6 +24,8 @@ profiles, work = sys.argv[1:]
 cases = [
     ("machine/Bambu Lab H2D 0.4 nozzle.json", "user-machine.json",
      "CLI External User Machine", "printer_settings_id"),
+    ("process/0.20mm Standard @BBL H2D.json", "user-process.json",
+     "CLI External User Process", "print_settings_id"),
     ("filament/Bambu PLA Basic @BBL H2D.json", "user-filament.json",
      "CLI External User Filament", "filament_settings_id"),
 ]
@@ -36,9 +38,14 @@ for source, target, name, id_key in cases:
         config[id_key] = name
         # This key is supplied by the inherited machine parent, not by this profile.
         config.pop("default_print_profile", None)
+    elif id_key == "print_settings_id":
+        config[id_key] = name
+        config["compatible_printers"] = ["CLI External User Machine"]
     else:
         config[id_key] = [name]
-        # These values are supplied by the inherited filament parent.
+        config["compatible_printers"] = ["CLI External User Machine"]
+        config["compatible_prints"] = ["CLI External User Process"]
+        # This value is supplied by the inherited filament parent.
         config.pop("filament_density", None)
     with open(os.path.join(work, target), "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
@@ -60,7 +67,7 @@ with open(os.path.join(work, "cube.stl"), "w", encoding="ascii") as f:
 EOF
 
 timeout 300 "$BIN" --datadir "$WORK/datadir" \
-    --load-settings "$WORK/user-machine.json;$PROFILES/process/0.20mm Standard @BBL H2D.json" \
+    --load-settings "$WORK/user-machine.json;$WORK/user-process.json" \
     --load-filaments "$WORK/user-filament.json" \
     --slice 0 --outputdir "$WORK/out" --export-3mf out.3mf "$WORK/cube.stl" \
     > "$WORK/cli.log" 2>&1
@@ -82,6 +89,8 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
 errors = []
 if config.get("printer_settings_id") != "CLI External User Machine":
     errors.append("printer_settings_id is %r" % config.get("printer_settings_id"))
+if config.get("print_settings_id") != "CLI External User Process":
+    errors.append("print_settings_id is %r" % config.get("print_settings_id"))
 if config.get("default_print_profile") != "0.20mm Standard @BBL H2D":
     errors.append("inherited default_print_profile is %r" % config.get("default_print_profile"))
 if "CLI External User Filament" not in config.get("filament_settings_id", []):
