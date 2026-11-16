@@ -386,7 +386,7 @@ static bool add_orto_seam_modifier(ModelObject& object)
         return false;
 
     const BoundingBoxf3& bounds = object.raw_mesh_bounding_box();
-    if (bounds.empty())
+    if (!bounds.defined)
         return false;
 
     constexpr double seam_width = 0.6;
