@@ -1392,6 +1392,7 @@ int CLI::run(int argc, char **argv)
     for (std::string& argument : orto_cli_arguments)
         orto_cli_argv.push_back(argument.data());
     argc = static_cast<int>(orto_cli_argv.size());
+    orto_cli_argv.push_back(nullptr); // Keep the conventional argv[argc] terminator for wxEntry.
     argv = orto_cli_argv.data();
     m_orto_headless = requested_orto_headless;
 
