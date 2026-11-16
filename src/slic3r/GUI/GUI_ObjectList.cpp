@@ -2891,22 +2891,28 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
     if (!shell_bbox.defined)
         return false;
 
-    // Add the seam modifier in the shell's own transformed coordinate system.
-    // Copying the shell's linear transform makes the seam rotate with the shell
-    // instead of remaining aligned to the unrotated object axes.
+    // Create the seam modifier in build-plate coordinates. The shell is already
+    // rotated and lifted, so use its final world bounds: the modifier starts at
+    // Z=0, reaches the top of the shell, and runs from the rear (+Y) to Y=0 only.
     if (!std::any_of(model_object.volumes.begin(), model_object.volumes.end(),
         [](const ModelVolume* volume) { return volume->is_precise_seam(); })) {
         constexpr double seam_width = 0.6;
-        constexpr double seam_outside_margin = 2.0;
-        const double seam_y_size = shell_mesh_bounds.max(1) + seam_outside_margin;
-        if (seam_y_size > 0.0) {
-            TriangleMesh seam_mesh = make_cube(seam_width, seam_y_size, shell_mesh_bounds.size().z());
+        const double seam_depth = shell_bbox.max.y();
+        const double seam_height = shell_bbox.max.z();
+        if (seam_depth > 0.0 && seam_height > 0.0) {
+            TriangleMesh seam_mesh = make_cube(seam_width, seam_depth, seam_height);
             ModelVolume* seam = model_object.add_volume(std::move(seam_mesh),
                 ModelVolumeType::PRECISE_SEAM_CENTER, false);
             seam->name = "ORTO Seam Modifier";
-            Transform3d seam_transform = shell_transform;
-            seam_transform.translation() += shell_transform.linear() *
-                Vec3d(-seam_width * 0.5, 0.0, shell_mesh_bounds.min(2));
+
+            // Center the seam plane on the shell's X midline rather than assuming
+            // that the imported mesh is centered around local X=0.
+            const Transform3d instance_matrix =
+                model_object.instances[instance_idx]->get_transformation().get_matrix();
+            Transform3d seam_transform = Transform3d::Identity();
+            seam_transform.translation() = instance_matrix.inverse() *
+                Vec3d((shell_bbox.min.x() + shell_bbox.max.x()) * 0.5 - seam_width * 0.5,
+                      0.0, 0.0);
             seam->set_transformation(seam_transform);
         }
     }
@@ -2914,7 +2920,7 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
     // Create a compact support blocker around the transformed shell, with 2 mm
     // clearance on each X/Y side. Keep its lower face at the configured world Z.
     constexpr double blocker_xy_margin = 2.0;
-    constexpr double blocker_height = 700.0;
+    constexpr double blocker_height = 100.0;
     const double blocker_width = shell_bbox.size().x() + 2.0 * blocker_xy_margin;
     const double blocker_depth = shell_bbox.size().y() + 2.0 * blocker_xy_margin;
     const Vec3d blocker_world_center((shell_bbox.min.x() + shell_bbox.max.x()) * 0.5,
