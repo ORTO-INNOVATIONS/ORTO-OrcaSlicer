@@ -1535,7 +1535,7 @@ int CLI::run(int argc, char **argv)
         std::string text = std::string("boost::nowide::nowide_filesystem Failed!\n") + (
         	SLIC3R_APP_FULL_NAME " will now terminate.\n\n") + ex.what();
     #if defined(_WIN32) && defined(SLIC3R_GUI)
-        if (m_actions.empty())
+        if (m_actions.empty() && !m_orto_headless)
         	// Empty actions means Slicer is executed in the GUI mode. Show a GUI message.
             MessageBoxA(NULL, text.c_str(), caption.c_str(), MB_OK | MB_ICONERROR);
     #endif
@@ -8469,7 +8469,10 @@ bool CLI::setup(int argc, char **argv)
                 L"crashes or unexpected behaviour while using OrcaSlicer.\n"
                 L"For example, ASUS Sonic Studio injects a Nahimic driver, which makes OrcaSlicer "
                 L"to crash on a secondary monitor";
-        MessageBoxW(NULL, text.c_str(), L"Warning"/*L"Incopatible library found"*/, MB_OK);
+        if (!m_orto_headless)
+            MessageBoxW(NULL, text.c_str(), L"Warning"/*L"Incopatible library found"*/, MB_OK);
+        else
+            BOOST_LOG_TRIVIAL(warning) << boost::nowide::narrow(text);
     }
 #endif
 
