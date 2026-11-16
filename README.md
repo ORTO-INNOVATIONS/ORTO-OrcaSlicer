@@ -88,7 +88,7 @@ orto-orca-slicer.exe --nogui ^
   "C:\temp\cover3.stl"
 ```
 
-В `--nogui` параметр `--slice 0` добавляется автоматически, если он не указан явно. Для обычного GUI-запуска:
+В `--nogui` параметр `--slice 0` добавляется автоматически, если он не указан явно. `--outputdir` обязателен: каталог создаётся автоматически, а G-code получает имя исходной STL-модели. Для обычного GUI-запуска:
 
 ```bat
 orto-orca-slicer.exe --gui --load-settings "profiles\printer.json;profiles\process.json" --load-filaments "profiles\filament.json" "model.stl"
