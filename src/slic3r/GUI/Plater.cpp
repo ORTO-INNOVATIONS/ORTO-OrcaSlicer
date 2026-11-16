@@ -392,20 +392,21 @@ static bool add_orto_seam_modifier(ModelObject& object)
     constexpr double seam_width = 0.6;
     constexpr double seam_half_width = seam_width / 2.0;
     // The rear wall is on the positive-Y side of the ORTO shell coordinate system.
-    // Extend through the wall with an inward overlap and a small outside margin.
-    constexpr double seam_depth = 8.5;
-    constexpr double seam_outside_margin = 0.5;
+    // Start the modifier 2 mm beyond the model's local Y bounding box and extend it
+    // inward to the object's local Y=0 plane. This makes its depth model-dependent.
+    constexpr double seam_outside_margin = 2.0;
     constexpr double seam_z_margin = 0.5;
 
     const double z_min = bounds.min(2) - seam_z_margin;
     const double z_size = bounds.size()(2) + 2.0 * seam_z_margin;
-    const double y_max = bounds.max(1) + seam_outside_margin;
-    const double y_min = y_max - seam_depth;
+    const double y_size = bounds.max(1) + seam_outside_margin;
+    if (y_size <= 0.0)
+        return false;
 
-    TriangleMesh mesh = make_cube(seam_width, seam_depth, z_size);
+    TriangleMesh mesh = make_cube(seam_width, y_size, z_size);
     ModelVolume* modifier = object.add_volume(std::move(mesh), ModelVolumeType::PRECISE_SEAM_CENTER, false);
     modifier->name = "ORTO Seam Modifier";
-    modifier->set_offset(Vec3d(-seam_half_width, y_min, z_min));
+    modifier->set_offset(Vec3d(-seam_half_width, 0.0, z_min));
     object.invalidate_bounding_box();
     return true;
 }
