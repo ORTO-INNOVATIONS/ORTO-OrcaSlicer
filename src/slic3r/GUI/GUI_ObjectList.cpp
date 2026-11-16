@@ -2898,10 +2898,15 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
     // shell transform; do not infer the slit from the post-transform bounding-box center.
     if (!std::any_of(model_object.volumes.begin(), model_object.volumes.end(),
         [](const ModelVolume* volume) { return volume->is_precise_seam(); })) {
-        constexpr double seam_width = 0.6;
+        // After the +90 degree X rotation, positive source Z maps toward negative
+        // world Y, which is the slit side shown in the reference screenshot.
+        // The rendered modifier was twice the requested thickness: use 0.3 mm
+        // mesh thickness to obtain the required 0.6 mm effective seam width.
+        constexpr double seam_width = 0.3;
+        constexpr double seam_x_offset = -7.0;
         constexpr double seam_outside_margin = 2.0;
-        const double seam_depth_min = shell_mesh_bounds.min(2) - seam_outside_margin;
-        const double seam_depth_max = 0.0; // local zero plane: do not cross the opposite/front wall
+        const double seam_depth_min = 0.0;
+        const double seam_depth_max = shell_mesh_bounds.max(2) + seam_outside_margin;
         const double seam_depth = seam_depth_max - seam_depth_min;
 
         // Solve the original local Y coordinate that maps to build-plate Z=0.
@@ -2925,7 +2930,7 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
                 seam->name = "ORTO Seam Modifier";
                 Transform3d seam_transform = shell_transform;
                 seam_transform.translation() += shell_transform.linear() *
-                    Vec3d(-seam_width * 0.5, seam_y_min, seam_depth_min);
+                    Vec3d(seam_x_offset - seam_width * 0.5, seam_y_min, seam_depth_min);
                 seam->set_transformation(seam_transform);
             }
         }
@@ -2934,7 +2939,10 @@ bool ObjectList::prepare_orto_shell_for_object(int obj_idx, size_t instance_idx,
     // Create a compact support blocker around the transformed shell, with 2 mm
     // clearance on each X/Y side. Keep its lower face at the configured world Z.
     constexpr double blocker_xy_margin = 2.0;
-    constexpr double blocker_height = 100.0;
+    // Extend the blocker 20 mm above the prepared shell while keeping its
+    // configured lower face fixed relative to the build plate.
+    constexpr double blocker_top_margin = 20.0;
+    const double blocker_height = std::max(100.0, shell_bbox.max.z() + blocker_top_margin - blocker_bottom_z);
     const double blocker_width = shell_bbox.size().x() + 2.0 * blocker_xy_margin;
     const double blocker_depth = shell_bbox.size().y() + 2.0 * blocker_xy_margin;
     const Vec3d blocker_world_center((shell_bbox.min.x() + shell_bbox.max.x()) * 0.5,
