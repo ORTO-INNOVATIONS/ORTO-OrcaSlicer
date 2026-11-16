@@ -1604,6 +1604,30 @@ int CLI::run(int argc, char **argv)
     sliced_info_t sliced_info;
     // Read up front so result.json reports it for early failures too.
     sliced_info.strict_mode = m_config.opt_bool("strict");
+
+    if (m_orto_headless) {
+        if (outfile_dir.empty()) {
+            const std::string message = "ORTO --nogui requires --outputdir so the G-code is saved to a persistent folder.";
+            boost::nowide::cerr << message << std::endl;
+            record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, message, sliced_info);
+            flush_and_exit(CLI_INVALID_PARAMS);
+        }
+        try {
+            boost::filesystem::create_directories(outfile_dir);
+        } catch (const std::exception& ex) {
+            const std::string message = "Could not create ORTO G-code output directory: " + std::string(ex.what());
+            boost::nowide::cerr << message << std::endl;
+            record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, message, sliced_info);
+            flush_and_exit(CLI_INVALID_PARAMS);
+        }
+        if (!boost::filesystem::is_directory(outfile_dir)) {
+            const std::string message = "ORTO G-code output path is not a directory: " + outfile_dir;
+            boost::nowide::cerr << message << std::endl;
+            record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, message, sliced_info);
+            flush_and_exit(CLI_INVALID_PARAMS);
+        }
+    }
+
     // --no-check skips the check behind the only NON_CRITICAL warning --strict acts on
     // (support needed but disabled), from the point it appears among the actions. The pair
     // would make --strict a no-op or depend on argument order, so refuse it.
@@ -7462,6 +7486,12 @@ int CLI::run(int argc, char **argv)
                                     //outfile = part_plate->get_tmp_gcode_path();
                                     if (outfile_dir.empty()) {
                                         outfile = part_plate->get_tmp_gcode_path();
+                                    }
+                                    else if (m_orto_headless && index == 0 && m_input_files.size() == 1) {
+                                        const std::string output_name =
+                                            boost::filesystem::path(m_input_files.front()).stem().string() + ".gcode";
+                                        outfile = (boost::filesystem::path(outfile_dir) / output_name).string();
+                                        part_plate->set_tmp_gcode_path(outfile);
                                     }
                                     else {
                                         outfile = outfile_dir + "/plate_" + std::to_string(index + 1) + ".gcode";
