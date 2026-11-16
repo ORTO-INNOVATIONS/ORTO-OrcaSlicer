@@ -68,6 +68,8 @@
 #include <cstring>
 #include <iostream>
 #include <math.h>
+#include <cmath>
+#include <Eigen/Geometry>
 #include <csignal>
 #include <atomic>
 #include <new>
