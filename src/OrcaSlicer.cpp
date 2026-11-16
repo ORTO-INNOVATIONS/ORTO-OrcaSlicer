@@ -8546,10 +8546,74 @@ bool CLI::setup(int argc, char **argv)
         for (const t_optiondef_map::value_type &optdef : *options)
             m_config.option(optdef.first, true);
 
-    set_data_dir(m_config.opt_string("datadir"));
+    std::string cli_data_dir = m_config.opt_string("datadir");
+    if (m_orto_headless && cli_data_dir.empty()) {
+        // Match GUI_App::init_app_config(): prefer a data_dir beside the Portable
+        // executable, otherwise use the current user's normal application-data folder.
+        const boost::filesystem::path portable_data_dir = path_to_binary.parent_path() / "data_dir";
+        if (boost::filesystem::is_directory(portable_data_dir)) {
+            cli_data_dir = portable_data_dir.string();
+        }
+#ifdef _WIN32
+        else if (const char *appdata = boost::nowide::getenv("APPDATA"); appdata != nullptr && *appdata != '\0') {
+            cli_data_dir = (boost::filesystem::path(appdata) / SLIC3R_APP_KEY).string();
+        }
+#elif defined(__linux__)
+        else {
+            cli_data_dir = default_data_dir();
+        }
+#elif defined(__APPLE__)
+        else if (const char *home = boost::nowide::getenv("HOME"); home != nullptr && *home != '\0') {
+            cli_data_dir = (boost::filesystem::path(home) / "Library" / "Application Support" / SLIC3R_APP_KEY).string();
+        }
+#endif
+    }
+
+    set_data_dir(cli_data_dir);
+    if (m_orto_headless && data_dir().empty()) {
+        boost::nowide::cerr << "Could not determine the ORTO headless data directory. Use --datadir to specify it explicitly." << std::endl;
+        return false;
+    }
     if (!data_dir().empty() && !boost::filesystem::exists(data_dir())) {
         boost::nowide::cerr << "Could not create data directory: " << data_dir() << std::endl;
         return false;
+    }
+
+    if (m_orto_headless) {
+        // PresetBundle::load_presets() reads system inheritance from data_dir/system.
+        // A fresh Portable install may not have launched the GUI yet, so lay down
+        // only vendor bundles that are missing from that directory. Existing system
+        // bundles (including user-updated versions) are left untouched.
+        const boost::filesystem::path resource_profiles = boost::filesystem::path(resources_dir()) / "profiles";
+        const boost::filesystem::path system_profiles = boost::filesystem::path(data_dir()) / "system";
+        if (!boost::filesystem::is_directory(resource_profiles)) {
+            boost::nowide::cerr << "ORTO headless cannot find bundled profiles directory: " << resource_profiles.string() << std::endl;
+            return false;
+        }
+
+        try {
+            boost::filesystem::create_directories(system_profiles);
+            std::vector<std::string> missing_vendor_bundles;
+            for (const std::string &vendor : vendor_names_in(resource_profiles)) {
+                const bool has_json = boost::filesystem::is_regular_file(system_profiles / (vendor + ".json"));
+                const bool has_cache = boost::filesystem::is_regular_file(system_profiles / (vendor + ".opc"));
+                if (!has_json && !has_cache)
+                    missing_vendor_bundles.push_back(vendor);
+            }
+            if (!missing_vendor_bundles.empty()) {
+                BOOST_LOG_TRIVIAL(info) << "ORTO headless installing " << missing_vendor_bundles.size()
+                                        << " missing system preset bundles from resources";
+                if (!install_vendor_bundles_from_resources(missing_vendor_bundles, "profiles", "system")) {
+                    boost::nowide::cerr << "Failed to install one or more bundled system preset profiles." << std::endl;
+                    return false;
+                }
+            }
+        } catch (const std::exception &ex) {
+            boost::nowide::cerr << "Failed to prepare ORTO system preset directory: " << ex.what() << std::endl;
+            return false;
+        }
+
+        BOOST_LOG_TRIVIAL(info) << "ORTO headless data directory: " << data_dir();
     }
 
     //FIXME Validating at this stage most likely does not make sense, as the config is not fully initialized yet.
