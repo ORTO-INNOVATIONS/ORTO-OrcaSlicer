@@ -233,11 +233,14 @@ int wmain(int argc, wchar_t **argv)
     argv_extended.emplace_back(gcodeviewer_param);
 #endif /* SLIC3R_WRAPPER_GCODEVIEWER */
 
+bool headless_mode = false;
 #ifdef SLIC3R_GUI
     // Here one may push some additional parameters based on the wrapper type.
     bool force_mesa = false;
 #endif /* SLIC3R_GUI */
     for (int i = 1; i < argc; ++ i) {
+        if (wcscmp(argv[i], L"--nogui") == 0)
+            headless_mode = true;
 #ifdef SLIC3R_GUI
         if (wcscmp(argv[i], L"--sw-renderer") == 0)
             force_mesa = true;
@@ -250,11 +253,13 @@ int wmain(int argc, wchar_t **argv)
 
 #ifdef SLIC3R_GUI
     OpenGLVersionCheck opengl_version_check;
-    bool load_mesa =
+    // A headless ORTO slice does not create a 3D scene; avoid probing or loading
+    // OpenGL in the wrapper before the native CLI pipeline starts.
+    bool load_mesa = !headless_mode && (
         // Forced from the command line.
         force_mesa ||
         // Try to load the default OpenGL driver and test its context version.
-        ! opengl_version_check.load_opengl_dll() || ! opengl_version_check.is_version_greater_or_equal_to(2, 0);
+        ! opengl_version_check.load_opengl_dll() || ! opengl_version_check.is_version_greater_or_equal_to(2, 0));
 #endif /* SLIC3R_GUI */
 
     wchar_t path_to_exe[MAX_PATH + 1] = { 0 };
