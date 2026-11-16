@@ -63,6 +63,14 @@ set_tests_properties(cli_load_filaments_count PROPERTIES
     SKIP_RETURN_CODE 77
     TIMEOUT 300)
 
+add_test(NAME cli_external_user_profile_inheritance
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_external_user_profile_inheritance.sh $<TARGET_FILE:OrcaSlicer> ${ORCA_CLI_TEST_PYTHON}
+        ${CMAKE_SOURCE_DIR}/resources/profiles/BBL)
+set_tests_properties(cli_external_user_profile_inheritance PROPERTIES
+    LABELS "CLI;RequiresApp"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 300)
+
 add_test(NAME cli_malformed_input
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_malformed_input.sh $<TARGET_FILE:OrcaSlicer> ${ORCA_CLI_TEST_PYTHON})
 set_tests_properties(cli_malformed_input PROPERTIES
