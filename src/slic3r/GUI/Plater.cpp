@@ -376,57 +376,6 @@ wxDEFINE_EVENT(EVT_NOTICE_FULL_SCREEN_CHANGED, IntEvent);
 #define BTN_SYNC_SIZE (wxSize(FromDIP(96), FromDIP(98)))
 
 
-// ORTO: Create model-local seam and support modifiers for imported prosthetic shells.
-static bool add_orto_modifiers(ModelObject& object)
-{
-    const BoundingBoxf3& bounds = object.raw_mesh_bounding_box();
-    if (!bounds.defined)
-        return false;
-
-    const Vec3d size = bounds.size();
-    if (size.x() <= 0.0 || size.y() <= 0.0 || size.z() <= 0.0)
-        return false;
-
-    bool changed = false;
-
-    // The rear slit is on the positive-Y side in the ORTO shell coordinate system.
-    // The seam plane is centered on the model's local X=0 and spans its full Z height.
-    if (!std::any_of(object.volumes.begin(), object.volumes.end(),
-        [](const ModelVolume* volume) { return volume->is_precise_seam(); })) {
-        constexpr double seam_width = 0.6;
-        constexpr double seam_outside_margin = 2.0;
-        const double seam_y_size = bounds.max(1) + seam_outside_margin;
-        if (seam_y_size > 0.0) {
-            TriangleMesh mesh = make_cube(seam_width, seam_y_size, size.z());
-            ModelVolume* seam = object.add_volume(std::move(mesh), ModelVolumeType::PRECISE_SEAM_CENTER, false);
-            seam->name = "ORTO Seam Modifier";
-            seam->set_offset(Vec3d(-seam_width * 0.5, 0.0, bounds.min(2)));
-            changed = true;
-        }
-    }
-
-    // Keep the support blocker tight to the shell: 2 mm extra on each X/Y side.
-    if (!std::any_of(object.volumes.begin(), object.volumes.end(),
-        [](const ModelVolume* volume) { return volume->is_support_blocker(); })) {
-        constexpr double blocker_xy_margin = 2.0;
-        constexpr double blocker_z_margin = 0.5;
-        const double blocker_z_min = bounds.min(2) - blocker_z_margin;
-        const double blocker_z_size = size.z() + 2.0 * blocker_z_margin;
-        TriangleMesh mesh = make_cube(size.x() + 2.0 * blocker_xy_margin,
-                                      size.y() + 2.0 * blocker_xy_margin,
-                                      blocker_z_size);
-        ModelVolume* blocker = object.add_volume(std::move(mesh), ModelVolumeType::SUPPORT_BLOCKER, false);
-        blocker->name = "ORTO-Support-Blocker";
-        blocker->set_offset(Vec3d(bounds.min(0) - blocker_xy_margin,
-                                  bounds.min(1) - blocker_xy_margin,
-                                  blocker_z_min));
-        changed = true;
-    }
-
-    if (changed)
-        object.invalidate_bounding_box();
-    return changed;
-}
 
 static std::string get_diameter_string(float diameter)
 {
@@ -10355,11 +10304,6 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
             BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ":" << __LINE__ << boost::format(", before load_model_objects, count %1%")%model.objects.size();
             auto loaded_idxs = load_model_objects(model.objects, is_project_file, false, true,
                 stage_geometry ? &import_display_options : nullptr);
-            if (!is_project_file) {
-                for (size_t idx : loaded_idxs)
-                    if (idx < q->model().objects.size())
-                        add_orto_modifiers(*q->model().objects[idx]);
-            }
             obj_idxs.insert(obj_idxs.end(), loaded_idxs.begin(), loaded_idxs.end());
 
             // load_model_objects only transfers ModelObjects; carry the Model-level CAD recipe
