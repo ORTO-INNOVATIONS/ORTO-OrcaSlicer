@@ -1211,8 +1211,190 @@ static void apply_discrete_gpu_preference()
 }
 #endif
 
+// ORTO headless preparation operates directly on the same Model representation used by
+// the GUI preparation. Keeping this geometry operation independent from wxWidgets lets
+// the native CLI pipeline slice the prepared model without creating a GUI or OpenGL scene.
+static bool prepare_orto_shell_for_cli(Model& model, double shell_lift_height,
+                                       double blocker_bottom_z, std::string& error)
+{
+    if (model.objects.size() != 1) {
+        error = "ORTO preparation requires exactly one model object.";
+        return false;
+    }
+
+    ModelObject& model_object = *model.objects.front();
+    if (model_object.instances.size() != 1) {
+        error = "ORTO preparation requires exactly one model instance.";
+        return false;
+    }
+
+    ModelVolume* shell = nullptr;
+    size_t model_part_count = 0;
+    for (ModelVolume* volume : model_object.volumes) {
+        if (volume->type() == ModelVolumeType::MODEL_PART) {
+            ++model_part_count;
+            shell = volume;
+        }
+        if ((volume->is_support_blocker() && volume->name == "ORTO-Support-Blocker") ||
+            volume->name == "ORTO Seam Modifier") {
+            error = "The input model already contains ORTO preparation geometry.";
+            return false;
+        }
+        if (volume->name == "ORTO-Cube" || volume->name == "Generic-Cube") {
+            error = "The input model contains a legacy ORTO preparation cube.";
+            return false;
+        }
+    }
+
+    if (model_part_count != 1 || shell == nullptr || shell->mesh().empty()) {
+        error = "ORTO preparation requires exactly one non-empty model part.";
+        return false;
+    }
+
+    const BoundingBoxf3 shell_mesh_bounds = shell->mesh().bounding_box();
+    if (!shell_mesh_bounds.defined) {
+        error = "Could not determine the cosmetic shell geometry bounds.";
+        return false;
+    }
+
+    const Transform3d original_shell_transform = shell->get_matrix();
+    Transform3d shell_transform = original_shell_transform;
+    const Eigen::Matrix3d rotate_x =
+        Eigen::AngleAxisd(0.5 * PI, Vec3d::UnitX()).toRotationMatrix();
+    shell_transform.linear() = rotate_x * shell_transform.linear();
+
+    shell->set_transformation(shell_transform);
+    model_object.invalidate_bounding_box();
+    BoundingBoxf3 shell_bbox = model_object.instance_bounding_box(0);
+    shell->set_transformation(original_shell_transform);
+    model_object.invalidate_bounding_box();
+    if (!shell_bbox.defined) {
+        error = "Could not calculate the prepared cosmetic shell bounds.";
+        return false;
+    }
+
+    const double lift_z = shell_lift_height - shell_bbox.min.z();
+    shell_bbox.translate(Vec3d(0.0, 0.0, lift_z));
+    if (!shell_bbox.defined || shell_bbox.size().x() <= 0.0 ||
+        shell_bbox.size().y() <= 0.0 || shell_bbox.size().z() <= 0.0) {
+        error = "The prepared cosmetic shell has invalid dimensions.";
+        return false;
+    }
+
+    // Preserve the original STL X=0 seam plane after STL import centering.
+    constexpr double seam_width = 0.6;
+    const double seam_x_offset = -shell->source.mesh_offset.x();
+    constexpr double seam_outside_margin = 2.0;
+    const double seam_depth_min = 0.0;
+    const double seam_depth_max = shell_mesh_bounds.max(2) + seam_outside_margin;
+    const double seam_depth = seam_depth_max - seam_depth_min;
+
+    const Transform3d instance_matrix =
+        model_object.instances.front()->get_transformation().get_matrix();
+    Transform3d prepared_instance_matrix = instance_matrix;
+    prepared_instance_matrix.translation().z() += lift_z;
+    const Transform3d shell_world_transform = prepared_instance_matrix * shell_transform;
+    const double vertical_world_per_local_y = shell_world_transform.linear()(2, 1);
+    if (std::abs(vertical_world_per_local_y) <= 1e-8 || seam_depth <= 0.0) {
+        error = "Could not calculate the ORTO seam modifier position.";
+        return false;
+    }
+
+    const double seam_y_min =
+        -(shell_world_transform.translation().z() +
+          shell_world_transform.linear()(2, 2) * seam_depth_max) /
+        vertical_world_per_local_y;
+    const double seam_y_max = shell_mesh_bounds.max(1) + seam_outside_margin;
+    const double seam_height = seam_y_max - seam_y_min;
+    if (!std::isfinite(seam_x_offset) || !std::isfinite(seam_y_min) ||
+        !std::isfinite(seam_height) || seam_height <= 0.0) {
+        error = "The calculated ORTO seam modifier dimensions are invalid.";
+        return false;
+    }
+
+    constexpr double blocker_xy_margin = 2.0;
+    constexpr double blocker_top_margin = 20.0;
+    const double blocker_height = shell_bbox.max.z() + blocker_top_margin - blocker_bottom_z;
+    const double blocker_width = shell_bbox.size().x() + 2.0 * blocker_xy_margin;
+    const double blocker_depth = shell_bbox.size().y() + 2.0 * blocker_xy_margin;
+    if (!std::isfinite(blocker_height) || blocker_height <= 0.0 ||
+        blocker_width <= 0.0 || blocker_depth <= 0.0) {
+        error = "The calculated ORTO support blocker dimensions are invalid.";
+        return false;
+    }
+
+    const Vec3d blocker_world_center((shell_bbox.min.x() + shell_bbox.max.x()) * 0.5,
+                                     (shell_bbox.min.y() + shell_bbox.max.y()) * 0.5,
+                                     blocker_bottom_z + blocker_height * 0.5);
+
+    // All geometry checks are complete. Apply the same transforms and native modifier
+    // types as the GUI preparation path, without any GUI selection or scene operations.
+    shell->set_transformation(shell_transform);
+    model_object.translate_instance(0, Vec3d(0.0, 0.0, lift_z));
+
+    TriangleMesh seam_mesh(its_make_cube(seam_width, seam_height, seam_depth));
+    ModelVolume* seam = model_object.add_volume(std::move(seam_mesh),
+        ModelVolumeType::PRECISE_SEAM_CENTER, false);
+    seam->name = "ORTO Seam Modifier";
+    Transform3d seam_transform = shell_transform;
+    seam_transform.translation() += shell_transform.linear() *
+        Vec3d(seam_x_offset - seam_width * 0.5, seam_y_min, seam_depth_min);
+    seam->set_transformation(seam_transform);
+
+    TriangleMesh blocker_mesh(its_make_cube(blocker_width, blocker_depth, blocker_height));
+    ModelVolume* blocker = model_object.add_volume(std::move(blocker_mesh),
+        ModelVolumeType::SUPPORT_BLOCKER);
+    Transform3d blocker_transform = prepared_instance_matrix.inverse();
+    blocker_transform.translation() = prepared_instance_matrix.inverse() * blocker_world_center;
+    blocker->set_transformation(blocker_transform);
+    blocker->name = "ORTO-Support-Blocker";
+    blocker->source.is_from_builtin_objects = true;
+
+    model_object.invalidate_bounding_box();
+    return true;
+}
+
 int CLI::run(int argc, char **argv)
 {
+    // ORTO launch modes are consumed here so the regular CLI parser remains unchanged.
+    // --nogui selects the native slicing pipeline and adds --slice 0 when omitted.
+    // --gui simply preserves the existing no-action GUI startup path.
+    std::vector<std::string> orto_cli_arguments;
+    std::vector<char*> orto_cli_argv;
+    bool requested_orto_headless = false;
+    bool requested_orto_gui = false;
+    bool has_explicit_slice = false;
+    orto_cli_arguments.reserve(size_t(argc) + 2);
+    for (int i = 0; i < argc; ++i) {
+        const std::string argument = argv[i] ? argv[i] : "";
+        if (argument == "--nogui") {
+            requested_orto_headless = true;
+            continue;
+        }
+        if (argument == "--gui") {
+            requested_orto_gui = true;
+            continue;
+        }
+        if (argument == "--slice" || boost::starts_with(argument, "--slice="))
+            has_explicit_slice = true;
+        orto_cli_arguments.push_back(argument);
+    }
+
+    if (requested_orto_headless && requested_orto_gui) {
+        boost::nowide::cerr << "--nogui and --gui cannot be used together." << std::endl;
+        return CLI_INVALID_PARAMS;
+    }
+    if (requested_orto_headless && !has_explicit_slice) {
+        orto_cli_arguments.emplace_back("--slice");
+        orto_cli_arguments.emplace_back("0");
+    }
+    orto_cli_argv.reserve(orto_cli_arguments.size());
+    for (std::string& argument : orto_cli_arguments)
+        orto_cli_argv.push_back(argument.data());
+    argc = static_cast<int>(orto_cli_argv.size());
+    argv = orto_cli_argv.data();
+    m_orto_headless = requested_orto_headless;
+
     // Mark the main thread for the debugger and for runtime checks.
     set_current_thread_name("orcaslicer_main");
     // Save the thread ID of the main thread.
@@ -2063,6 +2245,50 @@ int CLI::run(int argc, char **argv)
         }
         model.add_default_instances();
         m_models.push_back(std::move(model));
+    }
+
+    // ORTO headless mode prepares a single STL model before the native CLI pipeline
+    // applies its standard slicing and G-code export actions.
+    if (m_orto_headless) {
+        if (m_input_files.size() != 1 || !boost::algorithm::iends_with(m_input_files.front(), ".stl") ||
+            m_models.size() != 1) {
+            boost::nowide::cerr << "ORTO --nogui requires exactly one STL input file." << std::endl;
+            record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, cli_errors[CLI_INVALID_PARAMS], sliced_info);
+            flush_and_exit(CLI_INVALID_PARAMS);
+        }
+
+        AppConfig orto_app_config;
+        const std::string app_config_error = orto_app_config.load_if_exists();
+        if (!app_config_error.empty())
+            BOOST_LOG_TRIVIAL(warning) << "ORTO: could not load saved preparation preferences: " << app_config_error;
+
+        const auto read_orto_height = [&orto_app_config](const char* key, double fallback) {
+            const std::string configured = orto_app_config.get(key);
+            if (configured.empty())
+                return fallback;
+            try {
+                size_t parsed = 0;
+                const double value = std::stod(configured, &parsed);
+                if (parsed != configured.size() || !std::isfinite(value) || value < 0.0 || value > 100.0)
+                    return fallback;
+                return value;
+            } catch (...) {
+                return fallback;
+            }
+        };
+        const double shell_lift_height = read_orto_height("orto_shell_lift_mm", 3.0);
+        const double blocker_bottom_z = read_orto_height("orto_support_blocker_lift_mm", 20.0);
+
+        std::string preparation_error;
+        if (!prepare_orto_shell_for_cli(m_models.front(), shell_lift_height,
+                                        blocker_bottom_z, preparation_error)) {
+            boost::nowide::cerr << "ORTO preparation failed: " << preparation_error << std::endl;
+            BOOST_LOG_TRIVIAL(error) << "ORTO headless preparation failed: " << preparation_error;
+            record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, preparation_error, sliced_info);
+            flush_and_exit(CLI_INVALID_PARAMS);
+        }
+        BOOST_LOG_TRIVIAL(info) << "ORTO headless preparation completed: shell lift="
+                                << shell_lift_height << " mm, blocker bottom=" << blocker_bottom_z << " mm";
     }
 
     if (!is_bbl_3mf && plate_to_slice > 0)
