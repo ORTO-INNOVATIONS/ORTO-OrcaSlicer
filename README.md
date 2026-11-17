@@ -68,7 +68,7 @@ Windows x64 Portable, GitHub Actions [#113](https://github.com/ORTO-INNOVATIONS/
 - `--orto-printer-id` — выбранный принтер из справочника ORTO Docs;
 - `--orto-job-id` — уникальный ID производственного запуска;
 - `--orto-output-dir` — каталог только для подтверждённых G-code и manifest;
-- `--orto-prepared-dir` — отдельный рабочий каталог Headless Production, не отслеживаемый STL Distributor до подтверждения;
+- `--orto-prepared-dir` — отдельный рабочий каталог Headless Production, который STL Distributor отслеживает для обнаружения и проверки prepared-пакета; он не является источником утверждённых G-code;
 - `--load-settings` — профили принтера и процесса;
 - `--load-filaments` — профиль материала/филамента.
 
@@ -94,13 +94,13 @@ orto-orca-slicer.exe ^
 ### Производственная последовательность
 
 1. Headless Production получает STL, контекст заявки и три профиля, выполняет `cosmetic_shell` и CLI-слайсинг ровно один раз.
-2. В отдельном `--orto-prepared-dir` сохраняются `<request_number>_<job_id>.prepared.gcode` и sidecar `.orto-prepared.json` со статусом `prepared`, контекстом задания, SHA-256 и тремя профилями. Он должен отличаться от `--orto-output-dir`, чтобы неподтверждённый G-code не попадал в папку STL Distributor.
-3. Helper запускает Production Review с путём к готовому G-code и тем же контекстом.
+2. В отдельном `--orto-prepared-dir` сохраняются `<request_number>_<job_id>.prepared.gcode` и sidecar `<request_number>_<job_id>.prepared.gcode.orto-prepared.json` со статусом `prepared`, контекстом задания, SHA-256 и тремя профилями. Каталог должен отличаться от `--orto-output-dir`: STL Distributor отслеживает prepared-пакет для запуска Review, но не передаёт его в очередь печати.
+3. STL Distributor обнаруживает подготовленный пакет, проверяет sidecar и SHA-256 G-code и самостоятельно запускает Production Review с тем же контекстом. Folder Helper не запускает Review и не оркестрирует этот этап.
 4. OrcaSlicer открывает G-code как самостоятельный объект Preview. STL повторно не загружается; Slice/Print отключены.
 5. Кнопка «Подтвердить G-code» становится доступной после проверки sidecar и открытия G-code. При подтверждении хеш проверяется повторно.
 6. Формируются `<request_number>_<job_id>.gcode` и `<request_number>_<job_id>.manifest.json` со статусом `approved`; приложение закрывается.
-7. Production GUI остаётся доступен отдельно: после Cosmetic Shell оператор вручную запускает Slice и подтверждает результат той же кнопкой.
-8. STL Distributor проверяет подтверждённый пакет; существующие механизмы ORTO Docs и G-code Worker продолжают работу без изменения их бизнес-логики.
+7. STL Distributor проверяет approved-пакет и только после этого передаёт его в существующий производственный контур ORTO Docs/G-code Worker. Prepared G-code не поступает в очередь печати.
+8. Production GUI остаётся доступен отдельно: после Cosmetic Shell оператор вручную запускает Slice и подтверждает уже созданный G-code той же кнопкой.
 
 Закрытие производственного окна без подтверждения не создаёт подтверждённый пакет. Изменение G-code после подтверждения обнаруживается по SHA-256. Очередь печати, привязка G-code к заявкам, история печати и расход материала остаются ответственностью существующих компонентов ORTO Docs/G-code Worker.
 
