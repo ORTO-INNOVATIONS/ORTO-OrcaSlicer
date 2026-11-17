@@ -2603,7 +2603,7 @@ int CLI::run(int argc, char **argv)
             system_preset_resolver = std::make_unique<PresetBundle>();
         return *system_preset_resolver;
     };
-    auto resolve_preset = [&ensure_cli_preset_bundle, &ensure_system_preset_resolver](const std::string &file, DynamicPrintConfig &config,
+    auto resolve_preset = [this, &ensure_cli_preset_bundle, &ensure_system_preset_resolver](const std::string &file, DynamicPrintConfig &config,
                                                                                       std::string &config_type, const std::string &config_from,
                                                                                       bool probe_type, std::string &error) {
         const auto *inherits = config.option<ConfigOptionString>(BBL_JSON_KEY_INHERITS);
@@ -2702,7 +2702,7 @@ int CLI::run(int argc, char **argv)
     };
 
     // Record differences from the system parent without loading unrelated user presets.
-    auto cli_different_settings = [&ensure_cli_preset_bundle, &ensure_system_preset_resolver](const DynamicPrintConfig &resolved,
+    auto cli_different_settings = [this, &ensure_cli_preset_bundle, &ensure_system_preset_resolver](const DynamicPrintConfig &resolved,
                                                                     const std::string        &parent_name,
                                                                     Preset::Type              type) -> std::string {
         if (parent_name.empty())
