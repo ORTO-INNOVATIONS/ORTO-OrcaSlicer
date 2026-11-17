@@ -1368,6 +1368,8 @@ int CLI::run(int argc, char **argv)
     std::string requested_orto_mode;
     std::string requested_orto_algorithm;
     std::string requested_orto_request_number;
+    std::string requested_orto_request_id;
+    std::string requested_orto_printer_id;
     std::string requested_orto_request_item_id;
     std::string requested_orto_request_unit_id;
     std::string requested_orto_job_id;
@@ -1409,6 +1411,8 @@ int CLI::run(int argc, char **argv)
             {"--orto-mode", &requested_orto_mode},
             {"--orto-algorithm", &requested_orto_algorithm},
             {"--orto-request-number", &requested_orto_request_number},
+            {"--orto-request-id", &requested_orto_request_id},
+            {"--orto-printer-id", &requested_orto_printer_id},
             {"--orto-request-item-id", &requested_orto_request_item_id},
             {"--orto-request-unit-id", &requested_orto_request_unit_id},
             {"--orto-job-id", &requested_orto_job_id},
@@ -1446,6 +1450,7 @@ int CLI::run(int argc, char **argv)
         return CLI_INVALID_PARAMS;
     }
     const bool has_orto_job_context = !requested_orto_request_number.empty() ||
+        !requested_orto_request_id.empty() || !requested_orto_printer_id.empty() ||
         !requested_orto_request_item_id.empty() || !requested_orto_request_unit_id.empty() ||
         !requested_orto_job_id.empty() || !m_orto_output_dir.empty();
     if (requested_orto_mode.empty() && (!requested_orto_algorithm.empty() || has_orto_job_context)) {
@@ -1454,8 +1459,10 @@ int CLI::run(int argc, char **argv)
     }
     if (requested_orto_mode == "production" &&
         (requested_orto_algorithm.empty() || requested_orto_request_number.empty() ||
-         requested_orto_job_id.empty() || m_orto_output_dir.empty())) {
-        boost::nowide::cerr << "ORTO production mode requires --orto-algorithm, --orto-request-number, --orto-job-id and --orto-output-dir." << std::endl;
+         requested_orto_request_id.empty() || requested_orto_printer_id.empty() ||
+         requested_orto_job_id.empty() || m_orto_output_dir.empty() ||
+         (requested_orto_request_item_id.empty() && requested_orto_request_unit_id.empty()))) {
+        boost::nowide::cerr << "ORTO production mode requires --orto-algorithm, --orto-request-number, --orto-request-id, --orto-printer-id, --orto-job-id, --orto-output-dir and a request item or unit ID." << std::endl;
         return CLI_INVALID_PARAMS;
     }
     if (requested_orto_mode == "production" && requested_orto_headless) {
@@ -1481,6 +1488,8 @@ int CLI::run(int argc, char **argv)
     m_orto_production_mode = requested_orto_mode == "production";
     m_orto_algorithm = requested_orto_algorithm;
     m_orto_request_number = requested_orto_request_number;
+    m_orto_request_id = requested_orto_request_id;
+    m_orto_printer_id = requested_orto_printer_id;
     m_orto_request_item_id = requested_orto_request_item_id;
     m_orto_request_unit_id = requested_orto_request_unit_id;
     m_orto_job_id = requested_orto_job_id;
@@ -1820,6 +1829,8 @@ int CLI::run(int argc, char **argv)
         params.orto_mode = m_orto_production_mode ? "production" : "";
         params.orto_algorithm = m_orto_algorithm;
         params.orto_request_number = m_orto_request_number;
+        params.orto_request_id = m_orto_request_id;
+        params.orto_printer_id = m_orto_printer_id;
         params.orto_request_item_id = m_orto_request_item_id;
         params.orto_request_unit_id = m_orto_request_unit_id;
         params.orto_job_id = m_orto_job_id;
