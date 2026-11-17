@@ -1418,8 +1418,6 @@ int CLI::run(int argc, char **argv)
         if (consumed)
             continue;
 
-        if (argument == "--slice" || boost::starts_with(argument, "--slice="))
-            has_explicit_slice = true;
         orto_cli_arguments.push_back(argument);
     }
 
