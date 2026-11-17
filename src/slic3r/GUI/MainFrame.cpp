@@ -2788,7 +2788,9 @@ bool MainFrame::can_approve_orto_gcode() const
     if (m_plater == nullptr || wxGetApp().init_params == nullptr ||
         wxGetApp().init_params->orto_mode != "production" ||
         wxGetApp().init_params->orto_job_id.empty() ||
-        wxGetApp().init_params->orto_output_dir.empty())
+        wxGetApp().init_params->orto_output_dir.empty() ||
+        (wxGetApp().init_params->orto_algorithm == "cosmetic_shell" &&
+         !wxGetApp().init_params->orto_preparation_completed))
         return false;
 
     PartPlate* plate = m_plater->get_partplate_list().get_curr_plate();
