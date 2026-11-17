@@ -1143,8 +1143,9 @@ void GUI_App::post_init()
                 plater_->select_view_3D("3D");
                 this->plater()->load_gcode(from_u8(this->init_params->input_files.front()));
                 // G-code loading does not pass through the normal slice-completion event path.
-                // Refresh once after the viewer has loaded so Production Review can enable approval.
-                mainframe->update_slice_print_status(MainFrame::eEventObjectUpdate);
+                // Refresh approval state only for the explicit ORTO Production Review stage.
+                if (this->init_params->orto_mode == "production" && this->init_params->orto_stage == "review")
+                    mainframe->update_slice_print_status(MainFrame::eEventObjectUpdate);
                 m_open_method = "gcode";
             } else {
                 mainframe->select_tab(TAB_ID_PREPARE);
