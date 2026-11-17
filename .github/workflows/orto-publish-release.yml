@@ -60,7 +60,16 @@ jobs:
             echo "::error::The successful build commit is not an ancestor of the release checkout."
             exit 1
           fi
-          unexpected=$(git diff --name-only "$target_sha" "$release_sha" | grep -Ev '^(README\.md|CHANGELOG\.md|VERSION\.txt|docs/ORTO_PRODUCTION_MODE\.md|\.github/workflows/orto-publish-release\.yml|\.github/workflows/orto-windows-build\.yml)
+          changed_paths=$(git diff --name-only "$target_sha" "$release_sha")
+          for path in $changed_paths; do
+            case "$path" in
+              README.md|CHANGELOG.md|VERSION.txt|docs/ORTO_PRODUCTION_MODE.md|.github/workflows/orto-publish-release.yml|.github/workflows/orto-windows-build.yml) ;;
+              *)
+                echo "::error::Code/build input changed after the source build: $path"
+                exit 1
+                ;;
+            esac
+          done
       - name: Download portable artifact
         run: |
           set -euo pipefail
