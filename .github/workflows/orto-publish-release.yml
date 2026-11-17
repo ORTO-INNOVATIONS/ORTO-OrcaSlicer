@@ -128,9 +128,9 @@ jobs:
           (cd artifacts && zip -q -r -0 "$asset_path" .)
           test -s "$asset_path"
 
-          cat > release-notes.md <<'EOF'
-          # ORTO OrcaSlicer ${version} RELEASE
-
+          {
+            printf '# ORTO OrcaSlicer %s RELEASE\n\n' "$version"
+            cat <<'NOTES'
           Специализированная сборка OrcaSlicer для интеграции с производственной экосистемой ORTO.
 
           ## Что входит
@@ -152,11 +152,9 @@ jobs:
 
           ## Установка
           Распакуйте архив в отдельный каталог и укажите путь к `orto-orca-slicer.exe` в настройках интеграции ORTO.
-
-          ## Источник бинарников
-          Артефакт из успешной ORTO Windows Portable Build для commit `${release_sha}` (run `${run_id}`). Повторная компиляция при публикации не выполняется.
-          EOF
-          sed -i "s/\${version}/$version/g; s/\${release_sha}/$release_sha/g; s/\${run_id}/$run_id/g" release-notes.md
+          NOTES
+            printf '\n## Источник бинарников\nАртефакт из успешной ORTO Windows Portable Build для commit `%s` (run `%s`). Повторная компиляция при публикации не выполняется.\n' "$release_sha" "$run_id"
+          } > release-notes.md
 
           release_title="ORTO OrcaSlicer $version RELEASE"
           # The preferred dedicated token is selected above. A GITHUB_TOKEN
