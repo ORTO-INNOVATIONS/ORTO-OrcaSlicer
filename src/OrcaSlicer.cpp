@@ -1411,7 +1411,8 @@ int CLI::run(int argc, char **argv)
             {"--orto-request-number", &requested_orto_request_number},
             {"--orto-request-item-id", &requested_orto_request_item_id},
             {"--orto-request-unit-id", &requested_orto_request_unit_id},
-            {"--orto-job-id", &requested_orto_job_id}
+            {"--orto-job-id", &requested_orto_job_id},
+            {"--orto-output-dir", &m_orto_output_dir}
         };
         for (const auto& option : orto_options) {
             if (consume_orto_option(i, argument, option.first, *option.second)) {
@@ -1444,8 +1445,17 @@ int CLI::run(int argc, char **argv)
                             << ". Supported value: cosmetic_shell." << std::endl;
         return CLI_INVALID_PARAMS;
     }
-    if (requested_orto_mode.empty() && !requested_orto_algorithm.empty()) {
-        boost::nowide::cerr << "--orto-algorithm requires --orto-mode production." << std::endl;
+    const bool has_orto_job_context = !requested_orto_request_number.empty() ||
+        !requested_orto_request_item_id.empty() || !requested_orto_request_unit_id.empty() ||
+        !requested_orto_job_id.empty() || !m_orto_output_dir.empty();
+    if (requested_orto_mode.empty() && (!requested_orto_algorithm.empty() || has_orto_job_context)) {
+        boost::nowide::cerr << "ORTO production arguments require --orto-mode production." << std::endl;
+        return CLI_INVALID_PARAMS;
+    }
+    if (requested_orto_mode == "production" &&
+        (requested_orto_algorithm.empty() || requested_orto_request_number.empty() ||
+         requested_orto_job_id.empty() || m_orto_output_dir.empty())) {
+        boost::nowide::cerr << "ORTO production mode requires --orto-algorithm, --orto-request-number, --orto-job-id and --orto-output-dir." << std::endl;
         return CLI_INVALID_PARAMS;
     }
     if (requested_orto_mode == "production" && requested_orto_headless) {
@@ -1813,6 +1823,7 @@ int CLI::run(int argc, char **argv)
         params.orto_request_item_id = m_orto_request_item_id;
         params.orto_request_unit_id = m_orto_request_unit_id;
         params.orto_job_id = m_orto_job_id;
+        params.orto_output_dir = m_orto_output_dir;
 
         std::vector<std::string>    gcode_files;
         std::vector<std::string>    non_gcode_files;
