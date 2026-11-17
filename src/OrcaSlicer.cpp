@@ -1786,6 +1786,10 @@ int CLI::run(int argc, char **argv)
         boost::nowide::cerr << "ORTO cosmetic_shell production mode requires exactly one STL input file." << std::endl;
         return CLI_INVALID_PARAMS;
     }
+    if (m_orto_production_mode && (load_configs.size() != 2 || load_filaments.size() != 1)) {
+        boost::nowide::cerr << "ORTO production mode requires exactly three JSON profiles: printer and process via --load-settings, plus one filament via --load-filaments." << std::endl;
+        return CLI_INVALID_PARAMS;
+    }
     if (start_gui) {
         BOOST_LOG_TRIVIAL(info) << "no action, start gui directly" << std::endl;
 #ifdef SLIC3R_GUI
