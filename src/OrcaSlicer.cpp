@@ -1876,7 +1876,7 @@ int CLI::run(int argc, char **argv)
             if (!start_gui || m_input_files.size() != 1 || !boost::algorithm::iends_with(m_input_files.front(), ".stl")) { boost::nowide::cerr << "ORTO Production GUI requires one STL and no CLI slicing actions." << std::endl; return CLI_INVALID_PARAMS; }
             if (load_configs.size() != 2 || load_filaments.size() != 1) { boost::nowide::cerr << "ORTO Production GUI requires printer/process/filament JSON profiles." << std::endl; return CLI_INVALID_PARAMS; }
         } else if (m_orto_stage == "review") {
-            if (!start_gui || !m_orto_review_verified || !load_configs.empty() || !load_filaments.empty()) { boost::nowide::cerr << "ORTO Production Review requires one verified prepared G-code, GUI mode and no profile reload." << std::endl; return CLI_INVALID_PARAMS; }
+            if (!start_gui || !m_orto_review_verified || !load_configs.empty() || !load_filaments.empty() || !m_transforms.empty()) { boost::nowide::cerr << "ORTO Production Review requires one verified prepared G-code, GUI mode and no profile reload or extra transforms." << std::endl; return CLI_INVALID_PARAMS; }
         }
     }
     if (start_gui) {
@@ -2464,7 +2464,7 @@ int CLI::run(int argc, char **argv)
     if (m_orto_headless && m_orto_production_mode && m_orto_algorithm == "cosmetic_shell") {
         if (m_input_files.size() != 1 || !boost::algorithm::iends_with(m_input_files.front(), ".stl") ||
             m_models.size() != 1) {
-            boost::nowide::cerr << "ORTO --nogui requires exactly one STL input file." << std::endl;
+            boost::nowide::cerr << "ORTO Headless Production requires exactly one STL input file." << std::endl;
             record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, cli_errors[CLI_INVALID_PARAMS], sliced_info);
             flush_and_exit(CLI_INVALID_PARAMS);
         }
