@@ -78,6 +78,7 @@ private:
     std::string                 m_orto_request_item_id;
     std::string                 m_orto_request_unit_id;
     std::string                 m_orto_job_id;
+    std::string                 m_orto_output_dir;
 
     bool setup(int argc, char **argv);
 
