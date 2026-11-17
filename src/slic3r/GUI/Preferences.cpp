@@ -3,6 +3,7 @@
 #include "ColorPickerDialog.hpp"
 #include "OptionsGroup.hpp"
 #include "GUI_App.hpp"
+#include "GUI_Init.hpp"
 #include "MainFrame.hpp"
 #include "WebViewDialog.hpp"
 #include "Plater.hpp"
