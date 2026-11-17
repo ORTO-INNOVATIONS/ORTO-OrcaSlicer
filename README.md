@@ -67,7 +67,8 @@
 - `--orto-request-item-id` и/или `--orto-request-unit-id` — контекст позиции/физической единицы (обязателен как минимум один);
 - `--orto-printer-id` — выбранный принтер из справочника ORTO Docs;
 - `--orto-job-id` — уникальный ID производственного запуска;
-- `--orto-output-dir` — локальный каталог для подтверждённого результата;
+- `--orto-output-dir` — каталог только для подтверждённых G-code и manifest;
+- `--orto-prepared-dir` — отдельный рабочий каталог Headless Production, не отслеживаемый STL Distributor до подтверждения;
 - `--load-settings` — профили принтера и процесса;
 - `--load-filaments` — профиль материала/филамента.
 
@@ -88,12 +89,12 @@ orto-orca-slicer.exe ^
   "C:\\ORTO\\models\\model.stl"
 ```
 
-Неполный контекст, неизвестный режим или неподдерживаемый алгоритм отклоняются с понятной ошибкой. Если `--orto-stage` не указан, сохраняется прежний Production GUI. Headless Production использует штатный `--slice 0`; Production Review принимает путь к готовому G-code и его sidecar-манифест.
+Неполный контекст, неизвестный режим или неподдерживаемый алгоритм отклоняются с понятной ошибкой. Если `--orto-stage` не указан, сохраняется прежний Production GUI. Headless Production использует штатный `--slice 0` и обязательный отдельный `--orto-prepared-dir`; Production Review принимает путь к готовому G-code и его sidecar-манифест.
 
 ### Производственная последовательность
 
 1. Headless Production получает STL, контекст заявки и три профиля, выполняет `cosmetic_shell` и CLI-слайсинг ровно один раз.
-2. Сохраняются `<request_number>_<job_id>.prepared.gcode` и sidecar `.orto-prepared.json` со статусом `prepared`, контекстом задания, SHA-256 и тремя профилями.
+2. В отдельном `--orto-prepared-dir` сохраняются `<request_number>_<job_id>.prepared.gcode` и sidecar `.orto-prepared.json` со статусом `prepared`, контекстом задания, SHA-256 и тремя профилями. Он должен отличаться от `--orto-output-dir`, чтобы неподтверждённый G-code не попадал в папку STL Distributor.
 3. Helper запускает Production Review с путём к готовому G-code и тем же контекстом.
 4. OrcaSlicer открывает G-code как самостоятельный объект Preview. STL повторно не загружается; Slice/Print отключены.
 5. Кнопка «Подтвердить G-code» становится доступной после проверки sidecar и открытия G-code. При подтверждении хеш проверяется повторно.

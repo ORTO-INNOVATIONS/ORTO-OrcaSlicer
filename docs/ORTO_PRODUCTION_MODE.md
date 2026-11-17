@@ -51,15 +51,36 @@ orto-orca-slicer.exe ^
   "model.stl"
 ```
 
-Для текущего алгоритма обязательны: `--orto-mode production`, `--orto-algorithm cosmetic_shell`, номер и внутренний ID заявки, ID принтера, уникальный job ID, каталог результата и как минимум один ID позиции или физической единицы (`--orto-request-item-id` либо `--orto-request-unit-id`). Дополнительные ID позиции/единицы передаются при наличии обоих.
+Для текущего алгоритма обязательны: `--orto-mode production`, `--orto-algorithm cosmetic_shell`, номер и внутренний ID заявки, ID принтера, уникальный job ID, каталог подтверждённого результата (`--orto-output-dir`) и как минимум один ID позиции или физической единицы (`--orto-request-item-id` либо `--orto-request-unit-id`). Для этапа `headless` дополнительно обязателен отдельный рабочий каталог `--orto-prepared-dir`. Дополнительные ID позиции/единицы передаются при наличии обоих.
 
 Поддерживается режим `production`, алгоритм `cosmetic_shell` и три явных этапа: `gui`, `headless`, `review`. Если `--orto-stage` не передан, используется `gui` для обратной совместимости.
 
 - `gui` — существующий Production GUI: STL загружается и преобразуется автоматически, но Slice запускает оператор вручную; кнопка подтверждения активируется только после успешного слайсинга.
-- `headless` — CLI-этап: требуется `--slice 0`, одна STL и три профиля. OrcaSlicer выполняет преобразование и слайсинг один раз, сохраняет `<request_number>_<job_id>.prepared.gcode` и sidecar `.orto-prepared.json` с контекстом, SHA-256 и профилями.
+- `headless` — CLI-этап: требуется `--slice 0`, одна STL, три профиля и отдельный `--orto-prepared-dir`. OrcaSlicer выполняет преобразование и слайсинг один раз, сохраняет `<request_number>_<job_id>.prepared.gcode` и sidecar `.orto-prepared.json` с контекстом, SHA-256 и профилями. Подготовительный каталог обязан отличаться от `--orto-output-dir`, чтобы неподтверждённый G-code не попадал в папку STL Distributor.
 - `review` — GUI-этап с одним готовым G-code. Он проверяет sidecar, контекст и SHA-256, открывает G-code Preview и показывает кнопку подтверждения. Повторный слайсинг не выполняется; Slice/Print отключены.
 
 Кнопка подтверждения ни в одном этапе не выполняет слайсинг. В `gui` она подтверждает G-code, созданный ручным Slice оператора; в `review` — G-code, созданный headless-этапом.
+
+Пример запуска Headless Production (рабочий и утверждённый каталоги должны быть разными):
+
+```bat
+orto-orca-slicer.exe ^
+  --orto-mode production ^
+  --orto-stage headless ^
+  --orto-algorithm cosmetic_shell ^
+  --orto-request-number 12345 ^
+  --orto-request-id 6789 ^
+  --orto-request-item-id 13579 ^
+  --orto-printer-id 4 ^
+  --orto-job-id 550e8400-e29b-41d4-a716-446655440000 ^
+  --orto-output-dir "C:\\ORTO\\approved" ^
+  --orto-prepared-dir "C:\\ORTO\\prepared" ^
+  --load-settings "C:\\ORTO\\profiles\\printer.json;C:\\ORTO\\profiles\\process.json" ^
+  --load-filaments "C:\\ORTO\\profiles\\filament.json" ^
+  --slice 0 "C:\\ORTO\\models\\cover.stl"
+```
+
+После успешного завершения Helper запускает Production Review, передавая тот же job-контекст, `--orto-output-dir` и путь к `<request_number>_<job_id>.prepared.gcode` как входной файл. Профили и STL на этом этапе не передаются.
 
 Только в этом режиме разрешается активировать ORTO-производственные расширения, в том числе:
 

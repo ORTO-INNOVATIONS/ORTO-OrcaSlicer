@@ -82,6 +82,7 @@ private:
     std::string                 m_orto_request_unit_id;
     std::string                 m_orto_job_id;
     std::string                 m_orto_output_dir;
+    std::string                 m_orto_prepared_dir;
     std::string                 m_orto_review_manifest_path;
     std::string                 m_orto_expected_gcode_sha256;
     bool                        m_orto_review_verified{ false };

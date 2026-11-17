@@ -1435,7 +1435,8 @@ int CLI::run(int argc, char **argv)
             {"--orto-request-item-id", &requested_orto_request_item_id},
             {"--orto-request-unit-id", &requested_orto_request_unit_id},
             {"--orto-job-id", &requested_orto_job_id},
-            {"--orto-output-dir", &m_orto_output_dir}
+            {"--orto-output-dir", &m_orto_output_dir},
+            {"--orto-prepared-dir", &m_orto_prepared_dir}
         };
         for (const auto& option : orto_options) {
             if (consume_orto_option(i, argument, option.first, *option.second)) {
@@ -1479,7 +1480,7 @@ int CLI::run(int argc, char **argv)
     const bool has_orto_job_context = !requested_orto_request_number.empty() ||
         !requested_orto_request_id.empty() || !requested_orto_printer_id.empty() ||
         !requested_orto_request_item_id.empty() || !requested_orto_request_unit_id.empty() ||
-        !requested_orto_job_id.empty() || !m_orto_output_dir.empty();
+        !requested_orto_job_id.empty() || !m_orto_output_dir.empty() || !m_orto_prepared_dir.empty();
     if (requested_orto_mode.empty() && (!requested_orto_algorithm.empty() || has_orto_job_context)) {
         boost::nowide::cerr << "ORTO production arguments require --orto-mode production." << std::endl;
         return CLI_INVALID_PARAMS;
@@ -1488,7 +1489,8 @@ int CLI::run(int argc, char **argv)
         (requested_orto_algorithm.empty() || requested_orto_request_number.empty() ||
          requested_orto_request_id.empty() || requested_orto_printer_id.empty() ||
          requested_orto_job_id.empty() || m_orto_output_dir.empty() ||
-         (requested_orto_request_item_id.empty() && requested_orto_request_unit_id.empty()))) {
+         (requested_orto_request_item_id.empty() && requested_orto_request_unit_id.empty()) ||
+         (requested_orto_stage == "headless" && m_orto_prepared_dir.empty()))) {
         boost::nowide::cerr << "ORTO production mode requires --orto-algorithm, --orto-request-number, --orto-request-id, --orto-printer-id, --orto-job-id, --orto-output-dir and a request item or unit ID." << std::endl;
         return CLI_INVALID_PARAMS;
     }
@@ -1717,7 +1719,7 @@ int CLI::run(int argc, char **argv)
     float old_max_radius = 0.f, old_height_to_rod = 0.f, old_height_to_lid = 0.f;
     std::vector<double> old_max_layer_height, old_min_layer_height;
     std::string outfile_dir              =  m_config.opt_string("outputdir", true);
-    if (m_orto_headless) outfile_dir = m_orto_output_dir;
+    if (m_orto_headless) outfile_dir = m_orto_prepared_dir;
     const std::vector<std::string>              &load_configs               = m_config.option<ConfigOptionStrings>("load_settings", true)->values;
     const std::vector<std::string>              &uptodate_configs          = m_config.option<ConfigOptionStrings>("uptodate_settings", true)->values;
     const std::vector<std::string>              &uptodate_filaments          = m_config.option<ConfigOptionStrings>("uptodate_filaments", true)->values;
@@ -1754,6 +1756,20 @@ int CLI::run(int argc, char **argv)
         if (!boost::filesystem::is_directory(outfile_dir)) {
             const std::string message = "ORTO G-code output path is not a directory: " + outfile_dir;
             boost::nowide::cerr << message << std::endl;
+            record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, message, sliced_info);
+            flush_and_exit(CLI_INVALID_PARAMS);
+        }
+        boost::system::error_code approved_dir_error;
+        boost::filesystem::create_directories(m_orto_output_dir, approved_dir_error);
+        if (approved_dir_error || !boost::filesystem::is_directory(m_orto_output_dir)) {
+            const std::string message = "Could not create ORTO approved-output directory: " + m_orto_output_dir;
+            record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, message, sliced_info);
+            flush_and_exit(CLI_INVALID_PARAMS);
+        }
+        boost::system::error_code equivalent_error;
+        const bool same_output_directory = boost::filesystem::equivalent(outfile_dir, m_orto_output_dir, equivalent_error);
+        if (equivalent_error || same_output_directory) {
+            const std::string message = "ORTO prepared-G-code directory must be separate from the approved-output directory.";
             record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, message, sliced_info);
             flush_and_exit(CLI_INVALID_PARAMS);
         }
