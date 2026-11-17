@@ -556,6 +556,7 @@ public:
     SideButton* m_slice_option_btn{ nullptr };
     SideButton* m_print_btn{ nullptr };
     SideButton* m_print_option_btn{ nullptr };
+    SideButton* m_orto_approve_btn{ nullptr };
 
     SidePopup*  m_slice_option_pop_up{ nullptr };
 
@@ -567,6 +568,8 @@ public:
     //BBS
     void update_side_button_style();
     void update_slice_print_status(SlicePrintEventType event, bool can_slice = true, bool can_print = true);
+    bool can_approve_orto_gcode() const;
+    void approve_orto_gcode();
 
 #ifdef __APPLE__
     std::unique_ptr<wxTaskBarIcon> m_taskbar_icon;
