@@ -161,16 +161,14 @@ jobs:
           sed -i "s/\${version}/$version/g; s/\${release_sha}/$release_sha/g; s/\${run_id}/$run_id/g" release-notes.md
 
           release_title="ORTO OrcaSlicer $version RELEASE"
-          # Prefer a dedicated PAT/fine-grained token with Contents: write.
-          # GitHub App installation tokens can be used when configured as a secret
-          # and granted Contents: write on this repository.
-          if [[ -n "${ORTO_RELEASE_TOKEN:-}" ]]; then
-            export GH_TOKEN="$ORTO_RELEASE_TOKEN"
-            echo "Using dedicated ORTO_RELEASE_TOKEN for release publishing."
-          else
-            echo "::error::GITHUB_TOKEN was rejected with HTTP 403. Configure repository secret ORTO_RELEASE_TOKEN with Contents: write permission (fine-grained PAT or suitable GitHub App token), then rerun this workflow."
+          # Release publishing is performed with a dedicated token because the
+          # connected GitHub App / GITHUB_TOKEN was rejected by GitHub with 403.
+          if [[ -z "${ORTO_RELEASE_TOKEN:-}" ]]; then
+            echo "::error::Configure repository secret ORTO_RELEASE_TOKEN with Contents: write permission (fine-grained PAT or GitHub App token), then rerun this workflow."
             exit 1
           fi
+          export GH_TOKEN="$ORTO_RELEASE_TOKEN"
+
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG does not exist yet."
             gh release create "$TAG" "$asset_path" \
