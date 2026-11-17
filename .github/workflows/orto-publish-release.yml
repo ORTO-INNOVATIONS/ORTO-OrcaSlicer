@@ -64,13 +64,13 @@ jobs:
           fi
 
           release_sha=$(git rev-parse HEAD)
-          if [[ -n "$SOURCE_SHA" && "$release_sha" != "$SOURCE_SHA" ]]; then
-            echo "::error::Checked out commit $release_sha does not match requested source SHA $SOURCE_SHA."
+          if [[ -n "$SOURCE_SHA" && "${release_sha}" != "$SOURCE_SHA" ]]; then
+            echo "::error::Checked out commit ${release_sha} does not match requested source SHA $SOURCE_SHA."
             exit 1
           fi
           run_id="$RUN_ID"
 
-          if [[ -z "$run_id" ]]; then
+          if [[ -z "${run_id}" ]]; then
             run_id=$(gh run list \
               --repo "$GITHUB_REPOSITORY" \
               --workflow orto-windows-build.yml \
@@ -78,7 +78,7 @@ jobs:
               --status success \
               --limit 100 \
               --json databaseId,headSha,headBranch,workflowName \
-              | jq -r --arg sha "$release_sha" '
+              | jq -r --arg sha "${release_sha}" '
                   [.[] | select(
                     .headSha == $sha and
                     .headBranch == "orto-dev" and
@@ -87,32 +87,32 @@ jobs:
                 ')
           fi
 
-          if [[ -z "$run_id" ]]; then
-            echo "::error::No successful ORTO Windows Portable Build was found for commit $release_sha."
+          if [[ -z "${run_id}" ]]; then
+            echo "::error::No successful ORTO Windows Portable Build was found for commit ${release_sha}."
             exit 1
           fi
 
-          run=$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" \
+          run=$(gh run view "${run_id}" --repo "$GITHUB_REPOSITORY" \
             --json conclusion,headBranch,headSha,workflowName)
           conclusion=$(jq -r '.conclusion // empty' <<< "$run")
           branch=$(jq -r '.headBranch // empty' <<< "$run")
           workflow=$(jq -r '.workflowName // empty' <<< "$run")
           build_sha=$(jq -r '.headSha // empty' <<< "$run")
 
-          echo "Release commit: $release_sha"
-          echo "Source build: run $run_id; workflow=$workflow; branch=$branch; conclusion=$conclusion; SHA=$build_sha"
+          echo "Release commit: ${release_sha}"
+          echo "Source build: run ${run_id}; workflow=$workflow; branch=$branch; conclusion=$conclusion; SHA=$build_sha"
 
           if [[ "$conclusion" != "success" ||
                 "$branch" != "orto-dev" ||
-                "$build_sha" != "$release_sha" ||
+                "$build_sha" != "${release_sha}" ||
                 "$workflow" != "ORTO Windows Portable Build" ]]; then
             echo "::error::Release requires a successful ORTO Windows Portable Build for this exact orto-dev commit."
             exit 1
           fi
 
-          artifact_name="ORTO-OrcaSlicer-Quick-Windows-x64-$release_sha"
+          artifact_name="ORTO-OrcaSlicer-Quick-Windows-x64-${release_sha}"
           mkdir -p artifacts upload
-          gh run download "$run_id" \
+          gh run download "${run_id}" \
             --repo "$GITHUB_REPOSITORY" \
             --name "$artifact_name" \
             --dir artifacts
@@ -128,8 +128,8 @@ jobs:
           (cd artifacts && zip -q -r -0 "$asset_path" .)
           test -s "$asset_path"
 
-          cat > release-notes.md <<EOF
-          # ORTO OrcaSlicer $version RELEASE
+          cat > release-notes.md <<'EOF'
+          # ORTO OrcaSlicer ${version} RELEASE
 
           Специализированная сборка OrcaSlicer для интеграции с производственной экосистемой ORTO.
 
@@ -154,8 +154,9 @@ jobs:
           Распакуйте архив в отдельный каталог и укажите путь к `orto-orca-slicer.exe` в настройках интеграции ORTO.
 
           ## Источник бинарников
-          Артефакт из успешной ORTO Windows Portable Build для commit `$release_sha` (run `$run_id`). Повторная компиляция при публикации не выполняется.
+          Артефакт из успешной ORTO Windows Portable Build для commit `${release_sha}` (run `${run_id}`). Повторная компиляция при публикации не выполняется.
           EOF
+          sed -i "s/\${version}/$version/g; s/\${release_sha}/$release_sha/g; s/\${run_id}/$run_id/g" release-notes.md
 
           release_title="ORTO OrcaSlicer $version RELEASE"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -171,8 +172,8 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --title "$release_title" \
               --notes-file release-notes.md \
-              --target "$release_sha" \
+              --target "${release_sha}" \
               --latest
           fi
 
-          echo "Published $TAG using verified build run $run_id ($release_sha)."
+          echo "Published $TAG using verified build run ${run_id} (${release_sha})."
