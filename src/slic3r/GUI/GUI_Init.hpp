@@ -36,6 +36,14 @@ struct GUI_InitParams
     //BBS: remove start_as_gcodeviewer logic
 	//bool	                    start_as_gcodeviewer;
 	bool                        input_gcode { false };
+
+    // Explicit ORTO production context passed by the CLI launcher.
+    std::string                 orto_mode;
+    std::string                 orto_algorithm;
+    std::string                 orto_request_number;
+    std::string                 orto_request_item_id;
+    std::string                 orto_request_unit_id;
+    std::string                 orto_job_id;
 };
 
 int GUI_Run(GUI_InitParams &params);
