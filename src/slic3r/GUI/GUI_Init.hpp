@@ -44,6 +44,7 @@ struct GUI_InitParams
     std::string                 orto_request_item_id;
     std::string                 orto_request_unit_id;
     std::string                 orto_job_id;
+    std::string                 orto_output_dir;
 };
 
 int GUI_Run(GUI_InitParams &params);
