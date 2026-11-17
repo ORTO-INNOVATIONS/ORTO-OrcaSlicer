@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: 'Successful ORTO Windows Portable Build run ID'
-        required: true
+        description: 'Successful ORTO Windows Portable Build run ID (optional; auto-detected by commit SHA)'
+        required: false
         type: string
       tag:
         description: 'Release tag (must match version.inc; stable release)'
@@ -28,72 +28,98 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.run_id || '' }}
       TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+      TRIGGER_REF: ${{ github.ref }}
     steps:
-      - name: Checkout release documentation
+      - name: Checkout release source
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
           lfs: false
 
-      - name: Validate version and source build
+      - name: Validate source build and publish release
         shell: bash
         run: |
           set -euo pipefail
+
+          if [[ "$TRIGGER_REF" == refs/heads/* && "$TRIGGER_REF" != "refs/heads/orto-dev" ]]; then
+            echo "::error::Releases can only be dispatched from orto-dev."
+            exit 1
+          fi
+
           version=$(awk -F '"' '/SoftFever_VERSION/ { print $2; exit }' version.inc)
+          if [[ -z "$version" ]]; then
+            echo "::error::Could not read SoftFever_VERSION from version.inc."
+            exit 1
+          fi
+
           expected_tag="v$version"
-          if [ "$TAG" != "$expected_tag" ]; then
+          if [[ "$TAG" != "$expected_tag" ]]; then
             echo "::error::Tag $TAG does not match version.inc ($expected_tag)."
             exit 1
           fi
 
           release_sha=$(git rev-parse HEAD)
           run_id="$RUN_ID"
-          if [ -z "$run_id" ]; then
-            run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow orto-windows-build.yml --branch orto-dev --status success --limit 100 --json databaseId,headSha | jq -r --arg sha "$release_sha" '[.[] | select(.headSha == $sha)][0].databaseId // empty')
+
+          if [[ -z "$run_id" ]]; then
+            run_id=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow orto-windows-build.yml \
+              --branch orto-dev \
+              --status success \
+              --limit 100 \
+              --json databaseId,headSha,headBranch,workflowName \
+              | jq -r --arg sha "$release_sha" '
+                  [.[] | select(
+                    .headSha == $sha and
+                    .headBranch == "orto-dev" and
+                    .workflowName == "ORTO Windows Portable Build"
+                  )][0].databaseId // empty
+                ')
           fi
-          if [ -z "$run_id" ]; then
-            echo "::error::No successful ORTO Windows Portable Build exists for release commit $release_sha."
+
+          if [[ -z "$run_id" ]]; then
+            echo "::error::No successful ORTO Windows Portable Build was found for commit $release_sha."
             exit 1
           fi
 
-          run=$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json conclusion,headBranch,headSha,workflowName)
-          conclusion=$(jq -r '.conclusion' <<< "$run")
-          branch=$(jq -r '.headBranch' <<< "$run")
-          workflow=$(jq -r '.workflowName' <<< "$run")
-          target_sha=$(jq -r '.headSha' <<< "$run")
-          echo "Source workflow: $workflow; branch: $branch; conclusion: $conclusion; build SHA: $target_sha"
-          if [ "$conclusion" != success ] || [ "$branch" != orto-dev ] || [ "$target_sha" != "$release_sha" ] || [ "$workflow" != "ORTO Windows Portable Build" ]; then
-            echo "::error::Release requires a successful ORTO Windows Portable Build for the exact tagged orto-dev commit."
+          run=$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" \
+            --json conclusion,headBranch,headSha,workflowName)
+          conclusion=$(jq -r '.conclusion // empty' <<< "$run")
+          branch=$(jq -r '.headBranch // empty' <<< "$run")
+          workflow=$(jq -r '.workflowName // empty' <<< "$run")
+          build_sha=$(jq -r '.headSha // empty' <<< "$run")
+
+          echo "Release commit: $release_sha"
+          echo "Source build: run $run_id; workflow=$workflow; branch=$branch; conclusion=$conclusion; SHA=$build_sha"
+
+          if [[ "$conclusion" != "success" ||
+                "$branch" != "orto-dev" ||
+                "$build_sha" != "$release_sha" ||
+                "$workflow" != "ORTO Windows Portable Build" ]]; then
+            echo "::error::Release requires a successful ORTO Windows Portable Build for this exact orto-dev commit."
             exit 1
           fi
 
-          echo "RUN_ID=$run_id" >> "$GITHUB_ENV"
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-          echo "TARGET_SHA=$release_sha" >> "$GITHUB_ENV"
-
-      - name: Download portable artifact
-        run: |
-          set -euo pipefail
+          artifact_name="ORTO-OrcaSlicer-Quick-Windows-x64-$release_sha"
           mkdir -p artifacts upload
-          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --dir artifacts
-          find artifacts -maxdepth 2 -type f -print
-          if [ ! -d artifacts ]; then
-            echo "::error::No artifact directory was downloaded."
-            exit 1
-          fi
-          artifact_dir=$(find artifacts -mindepth 1 -maxdepth 1 -type d | head -n 1)
-          if [ -z "$artifact_dir" ]; then
-            echo "::error::Portable artifact folder was not found."
-            exit 1
-          fi
-          (cd "$artifact_dir" && zip -qr "$GITHUB_WORKSPACE/upload/ORTO-OrcaSlicer-Windows-x64-Portable-$VERSION.zip" .)
-          test -s "upload/ORTO-OrcaSlicer-Windows-x64-Portable-$VERSION.zip"
+          gh run download "$run_id" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$artifact_name" \
+            --dir artifacts
 
-      - name: Create GitHub Release
-        run: |
-          set -euo pipefail
+          if ! find artifacts -type f -print -quit | grep -q .; then
+            echo "::error::The expected portable artifact '$artifact_name' is empty or unavailable."
+            exit 1
+          fi
+
+          asset_name="ORTO-OrcaSlicer-Windows-x64-Portable-$version.zip"
+          asset_path="$GITHUB_WORKSPACE/upload/$asset_name"
+          (cd artifacts && zip -q -r -0 "$asset_path" .)
+          test -s "$asset_path"
+
           cat > release-notes.md <<EOF
-          # ORTO OrcaSlicer $VERSION
+          # ORTO OrcaSlicer $version RELEASE
 
           Специализированная сборка OrcaSlicer для интеграции с производственной экосистемой ORTO.
 
@@ -116,71 +142,27 @@ jobs:
 
           ## Установка
           Распакуйте архив в отдельный каталог и укажите путь к `orto-orca-slicer.exe` в настройках интеграции ORTO.
+
+          ## Источник бинарников
+          Артефакт из успешной ORTO Windows Portable Build для commit `$release_sha` (run `$run_id`). Повторная компиляция при публикации не выполняется.
           EOF
-          gh release create "$TAG" "upload/ORTO-OrcaSlicer-Windows-x64-Portable-$VERSION.zip" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "ORTO OrcaSlicer $VERSION" \
-            --notes-file release-notes.md \
-            --target "$TARGET_SHA"
- || true)
-          if [ -n "$unexpected" ]; then
-            echo "::error::Code/build inputs changed after the source build:"
-            printf '%s\\n' "$unexpected"
-            exit 1
+
+          release_title="ORTO OrcaSlicer $version RELEASE"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; updating its notes and attaching the verified build."
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$release_title" \
+              --notes-file release-notes.md
+            gh release upload "$TAG" "$asset_path" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$TAG" "$asset_path" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$release_title" \
+              --notes-file release-notes.md \
+              --target "$release_sha" \
+              --latest
           fi
 
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-          echo "TARGET_SHA=$release_sha" >> "$GITHUB_ENV"
-          echo "Release tag target: $release_sha (verified binary source: $target_sha)"
-
-      - name: Download portable artifact
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts upload
-          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --dir artifacts
-          find artifacts -maxdepth 2 -type f -print
-          if [ ! -d artifacts ]; then
-            echo "::error::No artifact directory was downloaded."
-            exit 1
-          fi
-          artifact_dir=$(find artifacts -mindepth 1 -maxdepth 1 -type d | head -n 1)
-          if [ -z "$artifact_dir" ]; then
-            echo "::error::Portable artifact folder was not found."
-            exit 1
-          fi
-          (cd "$artifact_dir" && zip -qr "$GITHUB_WORKSPACE/upload/ORTO-OrcaSlicer-Windows-x64-Portable-$VERSION.zip" .)
-          test -s "upload/ORTO-OrcaSlicer-Windows-x64-Portable-$VERSION.zip"
-
-      - name: Create GitHub Release
-        run: |
-          set -euo pipefail
-          cat > release-notes.md <<EOF
-          # ORTO OrcaSlicer $VERSION
-
-          Специализированная сборка OrcaSlicer для интеграции с производственной экосистемой ORTO.
-
-          ## Что входит
-          - Автоматизированная подготовка косметических оболочек протезов для производственного процесса ORTO.
-          - Поворот модели на +90° вокруг оси X.
-          - Отдельная настройка подъёма модели над столом во вкладке Preferences → ORTO (по умолчанию 3 мм).
-          - Отдельная настройка положения Support Blocker во вкладке Preferences → ORTO (по умолчанию 20 мм).
-          - Значения подъёма модели и Support Blocker сохраняются в настройках и применяются при подготовке; они не зашиты как фиксированные величины.
-          - Загрузка профилей принтера, процесса и филамента из JSON.
-          - Production GUI: оператор вручную запускает Slice и подтверждает готовый G-code.
-          - Headless Production: CLI выполняет Cosmetic Shell и слайсинг один раз, создаёт prepared G-code и sidecar-манифест с SHA-256 и профилями.
-          - Production Review: STL Distributor запускает просмотр подготовленного G-code; оператор подтверждает именно открытый файл без повторной нарезки.
-          - Headless CLI проверен с внешними JSON-профилями принтера, процесса и филамента Elegoo.
-          - Неподтверждённый prepared G-code не передаётся в производственную очередь; downstream получает только approved G-code и manifest.
-          - Folder Helper используется как локальный мост запуска Headless из ORTO Docs, но не оркестрирует Production Review.
-
-          ## Формат распространения
-          Только Windows x64 Portable. Установщик не предоставляется.
-
-          ## Установка
-          Распакуйте архив в отдельный каталог и укажите путь к `orto-orca-slicer.exe` в настройках интеграции ORTO.
-          EOF
-          gh release create "$TAG" "upload/ORTO-OrcaSlicer-Windows-x64-Portable-$VERSION.zip" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "ORTO OrcaSlicer $VERSION" \
-            --notes-file release-notes.md \
-            --target "$TARGET_SHA"
+          echo "Published $TAG using verified build run $run_id ($release_sha)."
