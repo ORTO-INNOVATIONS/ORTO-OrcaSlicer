@@ -2509,30 +2509,33 @@ void PreferencesDialog::create_items()
     sizer_page->Add(g_sizer, 0, wxEXPAND);
 
     //////////////////////////
-    //// ORTO TAB
-    /////////////////////////////////////
-    m_tab_index[PreferencesTab::ORTO] = m_pref_tabs->AppendItem("ORTO");
-    f_sizers.push_back(new wxFlexGridSizer(1, 1, v_gap, 0));
-    g_sizer = f_sizers.back();
-    g_sizer->AddGrowableCol(0, 1);
-
-    //// ORTO > Cosmetic shell preparation
-    g_sizer->Add(create_item_title(_L("Cosmetic shell preparation")), 1, wxEXPAND);
-
-    auto item_orto_shell_lift = create_item_decimal_input(
-        _L("Model lift above build plate"), "mm",
-        _L("Height of the lowest point of the cosmetic shell above the build plate after ORTO preparation."),
-        "orto_shell_lift_mm", 0.0, 100.0, 2);
-    g_sizer->Add(item_orto_shell_lift);
-
-    auto item_orto_blocker_lift = create_item_decimal_input(
-        _L("Support blocker lift above build plate"), "mm",
-        _L("Height of the lower face of the ORTO support blocker above the build plate."),
-        "orto_support_blocker_lift_mm", 0.0, 100.0, 2);
-    g_sizer->Add(item_orto_blocker_lift);
-
-    g_sizer->AddSpacer(FromDIP(10));
-    sizer_page->Add(g_sizer, 0, wxEXPAND);
+    // ORTO production settings are exposed only in an explicitly requested production session.
+    if (wxGetApp().init_params != nullptr && wxGetApp().init_params->orto_mode == "production") {
+        //// ORTO TAB
+        /////////////////////////////////////
+        m_tab_index[PreferencesTab::ORTO] = m_pref_tabs->AppendItem("ORTO");
+        f_sizers.push_back(new wxFlexGridSizer(1, 1, v_gap, 0));
+        g_sizer = f_sizers.back();
+        g_sizer->AddGrowableCol(0, 1);
+    
+        //// ORTO > Cosmetic shell preparation
+        g_sizer->Add(create_item_title(_L("Cosmetic shell preparation")), 1, wxEXPAND);
+    
+        auto item_orto_shell_lift = create_item_decimal_input(
+            _L("Model lift above build plate"), "mm",
+            _L("Height of the lowest point of the cosmetic shell above the build plate after ORTO preparation."),
+            "orto_shell_lift_mm", 0.0, 100.0, 2);
+        g_sizer->Add(item_orto_shell_lift);
+    
+        auto item_orto_blocker_lift = create_item_decimal_input(
+            _L("Support blocker lift above build plate"), "mm",
+            _L("Height of the lower face of the ORTO support blocker above the build plate."),
+            "orto_support_blocker_lift_mm", 0.0, 100.0, 2);
+        g_sizer->Add(item_orto_blocker_lift);
+    
+        g_sizer->AddSpacer(FromDIP(10));
+        sizer_page->Add(g_sizer, 0, wxEXPAND);
+    }
 
     //////////////////////////
     //// DEVELOPER TAB
