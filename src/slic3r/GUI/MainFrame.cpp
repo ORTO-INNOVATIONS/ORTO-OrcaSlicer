@@ -36,6 +36,10 @@
 #include <utility>
 #include "libslic3r/libslic3r.h"
 #include <nlohmann/json.hpp>
+#include <fstream>
+#include <iomanip>
+#include <cctype>
+#include <openssl/evp.h>
 #include <algorithm>
 #include <wx/dirdlg.h>
 #include <exception>
@@ -112,6 +116,7 @@
 #include "../Utils/PrintHost.hpp"
 
 #include "GUI_App.hpp"
+#include "GUI_Init.hpp"
 #include "ImGuiWrapper.hpp"
 #include "OpenGLManager.hpp"
 #include "Shortcuts.hpp"
@@ -2325,6 +2330,10 @@ wxBoxSizer* MainFrame::create_side_tools()
     m_slice_option_btn = new SideButton(slice_panel, "", "sidebutton_dropdown", 0, 14);
     m_print_btn = new SideButton(print_panel, _L("Print plate"), "");
     m_print_option_btn = new SideButton(print_panel, "", "sidebutton_dropdown", 0, 14);
+    if (wxGetApp().init_params != nullptr && wxGetApp().init_params->orto_mode == "production") {
+        m_orto_approve_btn = new SideButton(print_panel, _L("Подтвердить G-code"), "");
+        m_orto_approve_btn->Enable(false);
+    }
 
     // Orca: restore the last used print/export action if the user opted to remember it
     PrintSelectType remembered_print_select;
@@ -2342,6 +2351,8 @@ wxBoxSizer* MainFrame::create_side_tools()
     auto print_sizer = new wxBoxSizer(wxHORIZONTAL);
     print_sizer->Add(m_print_option_btn, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(1));
     print_sizer->Add(m_print_btn, 0, wxLEFT | wxALIGN_CENTER_VERTICAL, FromDIP(1));
+    if (m_orto_approve_btn != nullptr)
+        print_sizer->Add(m_orto_approve_btn, 0, wxLEFT | wxALIGN_CENTER_VERTICAL, FromDIP(8));
     print_panel->SetSizer(print_sizer);
 
     update_side_button_style();
@@ -2419,6 +2430,12 @@ wxBoxSizer* MainFrame::create_side_tools()
                 this->m_tabpanel->SelectPageByName(TAB_ID_PREVIEW);
             }
         });
+
+    if (m_orto_approve_btn != nullptr) {
+        m_orto_approve_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+            approve_orto_gcode();
+        });
+    }
 
     m_print_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent& event)
         {
@@ -2709,6 +2726,14 @@ void MainFrame::update_side_button_style()
     m_print_option_btn->SetIconOffset(FromDIP(2));
     m_print_option_btn->SetMinSize(wxSize(FromDIP(24), FromDIP(24)));
 
+    if (m_orto_approve_btn != nullptr) {
+        m_orto_approve_btn->SetTextLayout(SideButton::EHorizontalOrientation::HO_Left, FromDIP(12));
+        m_orto_approve_btn->SetCornerRadius(FromDIP(12));
+        m_orto_approve_btn->SetExtraSize(wxSize(FromDIP(24), FromDIP(10)));
+        m_orto_approve_btn->SetMinSize(wxSize(-1, FromDIP(24)));
+        m_orto_approve_btn->GetParent()->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#3B4446")));
+    }
+
     // Keep panel backgrounds in sync with SideButton's darkModeColorFor(#3B4446) bottom strip
     auto bg = StateColor::darkModeColorFor(wxColour("#3B4446"));
     m_slice_btn->GetParent()->SetBackgroundColour(bg);
@@ -2745,6 +2770,8 @@ void MainFrame::update_slice_print_status(SlicePrintEventType event, bool can_sl
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(" m_slice_select %1%: can_slice= %2%, can_print %3%, enable_slice %4%, enable_print %5% ")%m_slice_select % can_slice %can_print %enable_slice %enable_print;
     m_print_btn->Enable(enable_print);
     m_slice_btn->Enable(enable_slice);
+    if (m_orto_approve_btn != nullptr)
+        m_orto_approve_btn->Enable(can_approve_orto_gcode());
     m_slice_enable = enable_slice;
     m_print_enable = enable_print;
 
@@ -2755,6 +2782,149 @@ void MainFrame::update_slice_print_status(SlicePrintEventType event, bool can_sl
         wxGetApp().plater()->update_title_dirty_status();
 }
 
+
+bool MainFrame::can_approve_orto_gcode() const
+{
+    if (m_plater == nullptr || wxGetApp().init_params == nullptr ||
+        wxGetApp().init_params->orto_mode != "production" ||
+        wxGetApp().init_params->orto_job_id.empty() ||
+        wxGetApp().init_params->orto_output_dir.empty())
+        return false;
+
+    PartPlate* plate = m_plater->get_partplate_list().get_curr_plate();
+    if (plate == nullptr || !plate->is_slice_result_valid())
+        return false;
+
+    const std::string gcode_path = plate->get_tmp_gcode_path();
+    return !gcode_path.empty() && boost::filesystem::is_regular_file(gcode_path);
+}
+
+void MainFrame::approve_orto_gcode()
+{
+    if (!can_approve_orto_gcode()) {
+        wxMessageBox(_L("The current G-code is not ready for approval. Slice the model and review the preview first."),
+                     _L("ORTO production"), wxOK | wxICON_WARNING, this);
+        return;
+    }
+
+    const auto* context = wxGetApp().init_params;
+    PartPlate* plate = m_plater->get_partplate_list().get_curr_plate();
+    const std::string source_gcode = plate->get_tmp_gcode_path();
+
+    const auto safe_filename_part = [](const std::string& value) {
+        std::string safe;
+        safe.reserve(value.size());
+        for (unsigned char ch : value)
+            safe.push_back((std::isalnum(ch) || ch == '-' || ch == '_') ? char(ch) : '_');
+        while (!safe.empty() && safe.front() == '_') safe.erase(safe.begin());
+        while (!safe.empty() && safe.back() == '_') safe.pop_back();
+        return safe;
+    };
+
+    const auto sha256_file = [](const std::string& path) -> std::string {
+        std::ifstream input(path, std::ios::binary);
+        if (!input)
+            throw std::runtime_error("Cannot open file for SHA-256: " + path);
+
+        std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+        if (!ctx || EVP_DigestInit_ex(ctx.get(), EVP_sha256(), nullptr) != 1)
+            throw std::runtime_error("Cannot initialize SHA-256");
+
+        char buffer[64 * 1024];
+        while (input) {
+            input.read(buffer, sizeof(buffer));
+            const std::streamsize count = input.gcount();
+            if (count > 0 && EVP_DigestUpdate(ctx.get(), buffer, static_cast<size_t>(count)) != 1)
+                throw std::runtime_error("Cannot calculate SHA-256");
+        }
+        if (!input.eof())
+            throw std::runtime_error("Cannot read file for SHA-256: " + path);
+
+        unsigned char digest[EVP_MAX_MD_SIZE];
+        unsigned int digest_size = 0;
+        if (EVP_DigestFinal_ex(ctx.get(), digest, &digest_size) != 1)
+            throw std::runtime_error("Cannot finalize SHA-256");
+
+        std::ostringstream result;
+        result << std::hex << std::setfill('0');
+        for (unsigned int i = 0; i < digest_size; ++i)
+            result << std::setw(2) << static_cast<unsigned int>(digest[i]);
+        return result.str();
+    };
+
+    boost::filesystem::path output_gcode;
+    boost::filesystem::path output_manifest;
+    try {
+        const std::string request_part = safe_filename_part(context->orto_request_number);
+        const std::string job_part = safe_filename_part(context->orto_job_id);
+        if (request_part.empty() || job_part.empty())
+            throw std::runtime_error("Request number and job ID must contain filename-safe characters.");
+
+        const boost::filesystem::path output_dir(context->orto_output_dir);
+        boost::filesystem::create_directories(output_dir);
+        if (!boost::filesystem::is_directory(output_dir))
+            throw std::runtime_error("ORTO output path is not a directory.");
+
+        const std::string basename = request_part + "_" + job_part;
+        output_gcode = output_dir / (basename + ".gcode");
+        output_manifest = output_dir / (basename + ".manifest.json");
+        if (boost::filesystem::exists(output_gcode) || boost::filesystem::exists(output_manifest))
+            throw std::runtime_error("This ORTO job already has an output package. Duplicate approval is blocked.");
+
+        boost::filesystem::copy_file(source_gcode, output_gcode);
+        const std::string gcode_hash = sha256_file(output_gcode.string());
+
+        nlohmann::json manifest;
+        manifest["schema_version"] = 1;
+        manifest["event"] = "gcode_approved";
+        manifest["status"] = "approved";
+        manifest["created_at_unix"] = static_cast<long long>(std::time(nullptr));
+        manifest["request_number"] = context->orto_request_number;
+        manifest["request_item_id"] = context->orto_request_item_id;
+        manifest["request_unit_id"] = context->orto_request_unit_id;
+        manifest["job_id"] = context->orto_job_id;
+        manifest["algorithm"] = context->orto_algorithm;
+        manifest["algorithm_version"] = "1";
+        manifest["source_stl"] = context->input_files.empty() ? "" : context->input_files.front();
+        manifest["gcode_file"] = output_gcode.filename().string();
+        manifest["gcode_sha256"] = gcode_hash;
+
+        nlohmann::json profile_files = nlohmann::json::array();
+        for (const std::string& path : context->load_configs) {
+            if (!boost::filesystem::is_regular_file(path))
+                throw std::runtime_error("A loaded printer/process profile is no longer available: " + path);
+            profile_files.push_back({{"role", "settings"}, {"path", path}, {"sha256", sha256_file(path)}});
+        }
+        for (const std::string& path : context->load_filaments) {
+            if (!boost::filesystem::is_regular_file(path))
+                throw std::runtime_error("A loaded filament profile is no longer available: " + path);
+            profile_files.push_back({{"role", "filament"}, {"path", path}, {"sha256", sha256_file(path)}});
+        }
+        manifest["profiles"] = std::move(profile_files);
+
+        const boost::filesystem::path temporary_manifest(output_manifest.string() + ".tmp");
+        {
+            std::ofstream output(temporary_manifest.string(), std::ios::binary | std::ios::trunc);
+            if (!output)
+                throw std::runtime_error("Cannot create ORTO approval manifest.");
+            output << manifest.dump(2) << std::endl;
+            if (!output)
+                throw std::runtime_error("Cannot write ORTO approval manifest.");
+        }
+        boost::filesystem::rename(temporary_manifest, output_manifest);
+    }
+    catch (const std::exception& error) {
+        boost::system::error_code ec;
+        if (!output_gcode.empty())
+            boost::filesystem::remove(output_gcode, ec);
+        wxMessageBox(wxString::FromUTF8(error.what()), _L("ORTO production"), wxOK | wxICON_ERROR, this);
+        return;
+    }
+
+    // The manifest and G-code are now a complete, hash-bound approval package.
+    // The local STL Distributor handoff watches this output directory.
+    Close();
+}
 
 void MainFrame::on_dpi_changed(const wxRect& suggested_rect)
 {
@@ -2780,6 +2950,8 @@ void MainFrame::on_dpi_changed(const wxRect& suggested_rect)
     m_print_btn->Rescale();
     m_slice_option_btn->Rescale();
     m_print_option_btn->Rescale();
+    if (m_orto_approve_btn != nullptr)
+        m_orto_approve_btn->Rescale();
 
     // update Plater
     wxGetApp().plater()->msw_rescale();
