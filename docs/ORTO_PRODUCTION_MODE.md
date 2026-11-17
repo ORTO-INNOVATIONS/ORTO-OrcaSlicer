@@ -82,6 +82,24 @@ orto-orca-slicer.exe ^
 
 После успешного завершения Helper запускает Production Review, передавая тот же job-контекст, `--orto-output-dir` и путь к `<request_number>_<job_id>.prepared.gcode` как входной файл. Профили и STL на этом этапе не передаются.
 
+Пример запуска Production Review:
+
+```bat
+orto-orca-slicer.exe ^
+  --orto-mode production ^
+  --orto-stage review ^
+  --orto-algorithm cosmetic_shell ^
+  --orto-request-number 12345 ^
+  --orto-request-id 6789 ^
+  --orto-request-item-id 13579 ^
+  --orto-printer-id 4 ^
+  --orto-job-id 550e8400-e29b-41d4-a716-446655440000 ^
+  --orto-output-dir "C:\\ORTO\\approved" ^
+  "C:\\ORTO\\prepared\\12345_550e8400-e29b-41d4-a716-446655440000.prepared.gcode"
+```
+
+В Review не передаются STL, `--load-settings`, `--load-filaments` или `--orto-prepared-dir`: слайсер читает подготовительный sidecar рядом с G-code и открывает именно этот G-code.
+
 Только в этом режиме разрешается активировать ORTO-производственные расширения, в том числе:
 
 - производственные элементы интерфейса;
