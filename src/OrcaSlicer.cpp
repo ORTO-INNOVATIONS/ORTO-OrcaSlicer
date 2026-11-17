@@ -194,8 +194,10 @@ static std::string orto_safe_filename_part(const std::string& value)
 
 static bool orto_path_contains(const boost::filesystem::path& parent, const boost::filesystem::path& child)
 {
-    const boost::filesystem::path normalized_parent = boost::filesystem::absolute(parent).lexically_normal();
-    const boost::filesystem::path normalized_child = boost::filesystem::absolute(child).lexically_normal();
+    const boost::filesystem::path parent_path = parent.empty() ? boost::filesystem::current_path() : parent;
+    const boost::filesystem::path child_path = child.empty() ? boost::filesystem::current_path() : child;
+    const boost::filesystem::path normalized_parent = boost::filesystem::absolute(parent_path).lexically_normal();
+    const boost::filesystem::path normalized_child = boost::filesystem::absolute(child_path).lexically_normal();
     auto parent_it = normalized_parent.begin();
     auto child_it = normalized_child.begin();
     for (; parent_it != normalized_parent.end(); ++parent_it, ++child_it) {
