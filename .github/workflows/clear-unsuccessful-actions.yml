@@ -1,0 +1,55 @@
+name: Clear unsuccessful Actions
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+concurrency:
+  group: clear-unsuccessful-actions
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Delete failed, cancelled and skipped runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Find and delete unsuccessful workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Searching workflow runs in $GH_REPO..."
+
+          mapfile -t run_ids < <(
+            gh api --paginate "repos/$GH_REPO/actions/runs?per_page=100" \
+              --jq '.workflow_runs[]
+                | select(
+                    .conclusion == "failure" or
+                    .conclusion == "cancelled" or
+                    .conclusion == "skipped"
+                  )
+                | .id'
+          )
+
+          count=${#run_ids[@]}
+          echo "Found $count unsuccessful workflow run(s)."
+
+          if (( count == 0 )); then
+            echo "Nothing to clean up."
+            exit 0
+          fi
+
+          deleted=0
+          for run_id in "${run_ids[@]}"; do
+            echo "Deleting workflow run $run_id..."
+            gh api --method DELETE "repos/$GH_REPO/actions/runs/$run_id"
+            ((deleted += 1))
+          done
+
+          echo "Cleanup complete. Deleted $deleted workflow run(s)."
