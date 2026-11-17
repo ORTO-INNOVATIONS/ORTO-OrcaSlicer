@@ -1142,6 +1142,9 @@ void GUI_App::post_init()
                 mainframe->select_tab(TAB_ID_PREPARE);
                 plater_->select_view_3D("3D");
                 this->plater()->load_gcode(from_u8(this->init_params->input_files.front()));
+                // G-code loading does not pass through the normal slice-completion event path.
+                // Refresh once after the viewer has loaded so Production Review can enable approval.
+                mainframe->update_slice_print_status(MainFrame::eEventObjectUpdate);
                 m_open_method = "gcode";
             } else {
                 mainframe->select_tab(TAB_ID_PREPARE);

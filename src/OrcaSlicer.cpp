@@ -1491,7 +1491,7 @@ int CLI::run(int argc, char **argv)
          requested_orto_job_id.empty() || m_orto_output_dir.empty() ||
          (requested_orto_request_item_id.empty() && requested_orto_request_unit_id.empty()) ||
          (requested_orto_stage == "headless" && m_orto_prepared_dir.empty()))) {
-        boost::nowide::cerr << "ORTO production mode requires --orto-algorithm, --orto-request-number, --orto-request-id, --orto-printer-id, --orto-job-id, --orto-output-dir and a request item or unit ID." << std::endl;
+        boost::nowide::cerr << "ORTO production mode requires --orto-algorithm, --orto-request-number, --orto-request-id, --orto-printer-id, --orto-job-id, --orto-output-dir and a request item or unit ID; Headless Production also requires --orto-prepared-dir." << std::endl;
         return CLI_INVALID_PARAMS;
     }
     orto_cli_argv.reserve(orto_cli_arguments.size());
@@ -1668,6 +1668,12 @@ int CLI::run(int argc, char **argv)
             const boost::filesystem::path gcode(m_input_files.front());
             const boost::filesystem::path sidecar(gcode.string() + ".orto-prepared.json");
             if (!boost::filesystem::is_regular_file(gcode) || !boost::filesystem::is_regular_file(sidecar)) throw std::runtime_error("The prepared G-code or its ORTO preparation manifest is missing.");
+            boost::system::error_code review_output_error;
+            boost::filesystem::create_directories(m_orto_output_dir, review_output_error);
+            if (review_output_error || !boost::filesystem::is_directory(m_orto_output_dir)) throw std::runtime_error("Cannot create the ORTO approved-output directory.");
+            boost::system::error_code review_equivalent_error;
+            if (boost::filesystem::equivalent(gcode.parent_path(), m_orto_output_dir, review_equivalent_error) || review_equivalent_error)
+                throw std::runtime_error("Production Review output directory must be separate from the prepared-G-code directory.");
             json prepared; boost::nowide::ifstream input(sidecar.string(), std::ios::binary);
             if (!input) throw std::runtime_error("Cannot open the ORTO preparation manifest.");
             input >> prepared;
@@ -1740,7 +1746,7 @@ int CLI::run(int argc, char **argv)
 
     if (m_orto_headless) {
         if (outfile_dir.empty()) {
-            const std::string message = "ORTO --nogui requires --outputdir so the G-code is saved to a persistent folder.";
+            const std::string message = "ORTO Headless Production requires --orto-prepared-dir so the G-code is saved outside the approved-output directory.";
             boost::nowide::cerr << message << std::endl;
             record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, message, sliced_info);
             flush_and_exit(CLI_INVALID_PARAMS);
