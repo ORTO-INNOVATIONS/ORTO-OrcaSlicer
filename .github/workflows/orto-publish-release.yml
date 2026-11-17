@@ -123,6 +123,34 @@ jobs:
             exit 1
           fi
 
+          {
+            printf '# ORTO OrcaSlicer %s RELEASE\n\n' "$version"
+            cat <<'NOTES'
+          Специализированная сборка OrcaSlicer для интеграции с производственной экосистемой ORTO.
+
+          ## Что входит
+          - Автоматизированная подготовка косметических оболочек протезов для производственного процесса ORTO.
+          - Поворот модели на +90° вокруг оси X.
+          - Отдельная настройка подъёма модели над столом во вкладке Preferences → ORTO (по умолчанию 3 мм).
+          - Отдельная настройка положения Support Blocker во вкладке Preferences → ORTO (по умолчанию 20 мм).
+          - Значения подъёма модели и Support Blocker сохраняются в настройках и применяются при подготовке; они не зашиты как фиксированные величины.
+          - Загрузка профилей принтера, процесса и филамента из JSON.
+          - Production GUI: оператор вручную запускает Slice и подтверждает готовый G-code.
+          - Headless Production: CLI выполняет Cosmetic Shell и слайсинг один раз, создаёт prepared G-code и sidecar-манифест с SHA-256 и профилями.
+          - Production Review: STL Distributor запускает просмотр подготовленного G-code; оператор подтверждает именно открытый файл без повторной нарезки.
+          - Headless CLI проверен с внешними JSON-профилями принтера, процесса и филамента Elegoo.
+          - Неподтверждённый prepared G-code не передаётся в производственную очередь; downstream получает только approved G-code и manifest.
+          - Folder Helper используется как локальный мост запуска Headless из ORTO Docs, но не оркестрирует Production Review.
+
+          ## Формат распространения
+          Только Windows x64 Portable. Установщик не предоставляется.
+
+          ## Установка
+          Распакуйте архив в отдельный каталог и укажите путь к `orto-orca-slicer.exe` в настройках интеграции ORTO.
+          NOTES
+            printf '\\n## Источник бинарников\\nАртефакт из успешной ORTO Windows Portable Build для commit %s (run %s). Повторная компиляция при публикации не выполняется.\\n' "$release_sha" "$run_id"
+          } > release-notes.md
+
           asset_name="ORTO-OrcaSlicer-Windows-x64-Portable-$version.zip"
           asset_path="$GITHUB_WORKSPACE/upload/$asset_name"
           (cd artifacts && zip -q -r -0 "$asset_path" .)
