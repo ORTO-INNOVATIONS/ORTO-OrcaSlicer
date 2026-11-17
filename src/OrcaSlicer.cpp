@@ -1362,9 +1362,6 @@ int CLI::run(int argc, char **argv)
     // no production context or ORTO model preparation is enabled.
     std::vector<std::string> orto_cli_arguments;
     std::vector<char*> orto_cli_argv;
-    bool requested_orto_headless = false;
-    bool requested_orto_gui = false;
-    bool has_explicit_slice = false;
     std::string requested_orto_mode;
     std::string requested_orto_algorithm;
     std::string requested_orto_request_number;
@@ -1397,15 +1394,6 @@ int CLI::run(int argc, char **argv)
 
     for (int i = 0; i < argc; ++i) {
         const std::string argument = argv[i] ? argv[i] : "";
-        if (argument == "--nogui") {
-            requested_orto_headless = true;
-            continue;
-        }
-        if (argument == "--gui") {
-            requested_orto_gui = true;
-            continue;
-        }
-
         bool consumed = false;
         const std::pair<const char*, std::string*> orto_options[] = {
             {"--orto-mode", &requested_orto_mode},
@@ -1465,18 +1453,6 @@ int CLI::run(int argc, char **argv)
         boost::nowide::cerr << "ORTO production mode requires --orto-algorithm, --orto-request-number, --orto-request-id, --orto-printer-id, --orto-job-id, --orto-output-dir and a request item or unit ID." << std::endl;
         return CLI_INVALID_PARAMS;
     }
-    if (requested_orto_mode == "production" && requested_orto_headless) {
-        boost::nowide::cerr << "ORTO production mode requires the GUI so the operator can review and approve G-code." << std::endl;
-        return CLI_INVALID_PARAMS;
-    }
-    if (requested_orto_headless && requested_orto_gui) {
-        boost::nowide::cerr << "--nogui and --gui cannot be used together." << std::endl;
-        return CLI_INVALID_PARAMS;
-    }
-    if (requested_orto_headless && !has_explicit_slice) {
-        orto_cli_arguments.emplace_back("--slice");
-        orto_cli_arguments.emplace_back("0");
-    }
     orto_cli_argv.reserve(orto_cli_arguments.size());
     for (std::string& argument : orto_cli_arguments)
         orto_cli_argv.push_back(argument.data());
@@ -1484,7 +1460,6 @@ int CLI::run(int argc, char **argv)
     orto_cli_argv.push_back(nullptr); // Keep the conventional argv[argc] terminator for wxEntry.
     argv = orto_cli_argv.data();
 
-    m_orto_headless = requested_orto_headless;
     m_orto_production_mode = requested_orto_mode == "production";
     m_orto_algorithm = requested_orto_algorithm;
     m_orto_request_number = requested_orto_request_number;
