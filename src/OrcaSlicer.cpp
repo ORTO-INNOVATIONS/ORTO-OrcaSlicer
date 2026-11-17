@@ -192,6 +192,28 @@ static std::string orto_safe_filename_part(const std::string& value)
     return safe;
 }
 
+static bool orto_path_contains(const boost::filesystem::path& parent, const boost::filesystem::path& child)
+{
+    const boost::filesystem::path normalized_parent = boost::filesystem::absolute(parent).lexically_normal();
+    const boost::filesystem::path normalized_child = boost::filesystem::absolute(child).lexically_normal();
+    auto parent_it = normalized_parent.begin();
+    auto child_it = normalized_child.begin();
+    for (; parent_it != normalized_parent.end(); ++parent_it, ++child_it) {
+        if (child_it == normalized_child.end()) return false;
+#ifdef _WIN32
+        if (!boost::iequals(parent_it->string(), child_it->string())) return false;
+#else
+        if (*parent_it != *child_it) return false;
+#endif
+    }
+    return true;
+}
+
+static bool orto_paths_overlap(const boost::filesystem::path& first, const boost::filesystem::path& second)
+{
+    return orto_path_contains(first, second) || orto_path_contains(second, first);
+}
+
 static std::string orto_sha256_file(const std::string& path)
 {
     boost::nowide::ifstream input(path, std::ios::binary);
@@ -1671,9 +1693,8 @@ int CLI::run(int argc, char **argv)
             boost::system::error_code review_output_error;
             boost::filesystem::create_directories(m_orto_output_dir, review_output_error);
             if (review_output_error || !boost::filesystem::is_directory(m_orto_output_dir)) throw std::runtime_error("Cannot create the ORTO approved-output directory.");
-            boost::system::error_code review_equivalent_error;
-            if (boost::filesystem::equivalent(gcode.parent_path(), m_orto_output_dir, review_equivalent_error) || review_equivalent_error)
-                throw std::runtime_error("Production Review output directory must be separate from the prepared-G-code directory.");
+            if (orto_paths_overlap(gcode.parent_path(), m_orto_output_dir))
+                throw std::runtime_error("Production Review output directory must be outside the prepared-G-code directory tree.");
             json prepared; boost::nowide::ifstream input(sidecar.string(), std::ios::binary);
             if (!input) throw std::runtime_error("Cannot open the ORTO preparation manifest.");
             input >> prepared;
@@ -1774,10 +1795,8 @@ int CLI::run(int argc, char **argv)
             record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, message, sliced_info);
             flush_and_exit(CLI_INVALID_PARAMS);
         }
-        boost::system::error_code equivalent_error;
-        const bool same_output_directory = boost::filesystem::equivalent(outfile_dir, m_orto_output_dir, equivalent_error);
-        if (equivalent_error || same_output_directory) {
-            const std::string message = "ORTO prepared-G-code directory must be separate from the approved-output directory.";
+        if (orto_paths_overlap(outfile_dir, m_orto_output_dir)) {
+            const std::string message = "ORTO prepared-G-code directory must be outside the approved-output directory tree.";
             record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, message, sliced_info);
             flush_and_exit(CLI_INVALID_PARAMS);
         }
