@@ -1,6 +1,7 @@
 #include "MainFrame.hpp"
 
 #include <wx/event.h>
+#include <wx/msgdlg.h>
 #include "slic3r/GUI/Event.hpp"
 #include <wx/gdicmn.h>
 #include <wx/dcclient.h>
@@ -43,6 +44,7 @@
 #include <algorithm>
 #include <wx/dirdlg.h>
 #include <exception>
+#include <stdexcept>
 #include <wx/filedlg.h>
 #include "slic3r/GUI/Lazy.hpp"
 #include <wx/filefn.h>
@@ -2947,7 +2949,7 @@ void MainFrame::approve_orto_gcode()
 
     // The manifest and G-code are now a complete, hash-bound approval package.
     // The local STL Distributor handoff watches this output directory.
-    Close();
+    Close(true);
 }
 
 void MainFrame::on_dpi_changed(const wxRect& suggested_rect)
