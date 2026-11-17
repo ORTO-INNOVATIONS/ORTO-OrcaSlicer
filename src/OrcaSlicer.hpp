@@ -75,6 +75,8 @@ private:
     bool                        m_orto_production_mode{ false };
     std::string                 m_orto_algorithm;
     std::string                 m_orto_request_number;
+    std::string                 m_orto_request_id;
+    std::string                 m_orto_printer_id;
     std::string                 m_orto_request_item_id;
     std::string                 m_orto_request_unit_id;
     std::string                 m_orto_job_id;
