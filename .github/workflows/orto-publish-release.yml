@@ -10,6 +10,10 @@ on:
         description: 'Successful ORTO Windows Portable Build run ID (optional; auto-detected by commit SHA)'
         required: false
         type: string
+      source_sha:
+        description: 'Commit SHA of the already-built source (optional; defaults to the selected ref)'
+        required: false
+        type: string
       tag:
         description: 'Release tag (must match version.inc; stable release)'
         required: true
@@ -29,11 +33,12 @@ jobs:
       RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.run_id || '' }}
       TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
       TRIGGER_REF: ${{ github.ref }}
+      SOURCE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.source_sha || github.sha }}
     steps:
       - name: Checkout release source
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_sha || github.sha }}
           lfs: false
 
       - name: Validate source build and publish release
@@ -59,6 +64,10 @@ jobs:
           fi
 
           release_sha=$(git rev-parse HEAD)
+          if [[ -n "$SOURCE_SHA" && "$release_sha" != "$SOURCE_SHA" ]]; then
+            echo "::error::Checked out commit $release_sha does not match requested source SHA $SOURCE_SHA."
+            exit 1
+          fi
           run_id="$RUN_ID"
 
           if [[ -z "$run_id" ]]; then
