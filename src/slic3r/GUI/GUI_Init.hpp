@@ -49,6 +49,7 @@ struct GUI_InitParams
     std::string                 orto_job_id;
     std::string                 orto_output_dir;
     std::string                 orto_review_manifest_path;
+    std::string                 orto_review_manifest_sha256;
     std::string                 orto_expected_gcode_sha256;
     bool                        orto_review_verified { false };
     bool                        orto_preparation_completed { false };

@@ -84,6 +84,7 @@ private:
     std::string                 m_orto_output_dir;
     std::string                 m_orto_prepared_dir;
     std::string                 m_orto_review_manifest_path;
+    std::string                 m_orto_review_manifest_sha256;
     std::string                 m_orto_expected_gcode_sha256;
     bool                        m_orto_review_verified{ false };
 

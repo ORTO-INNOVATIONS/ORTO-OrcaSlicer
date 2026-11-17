@@ -2819,7 +2819,8 @@ bool MainFrame::can_approve_orto_gcode() const
     const auto* context = wxGetApp().init_params;
     if (context->orto_stage == "review") {
         if (!context->orto_review_verified || !context->input_gcode || context->input_files.size() != 1 ||
-            !m_plater->only_gcode_mode() || context->orto_expected_gcode_sha256.empty())
+            !m_plater->only_gcode_mode() || context->orto_expected_gcode_sha256.empty() ||
+            context->orto_review_manifest_sha256.empty())
             return false;
         return boost::filesystem::is_regular_file(context->input_files.front()) &&
             !m_plater->get_last_loaded_gcode().empty();
@@ -2915,6 +2916,7 @@ void MainFrame::approve_orto_gcode()
             prepared_input >> prepared_manifest;
             const std::string source_hash = sha256_file(source_gcode);
             if (source_hash != context->orto_expected_gcode_sha256 ||
+                sha256_file(context->orto_review_manifest_path) != context->orto_review_manifest_sha256 ||
                 prepared_manifest.value("gcode_sha256", std::string()) != context->orto_expected_gcode_sha256 ||
                 prepared_manifest.value("job_id", std::string()) != context->orto_job_id ||
                 prepared_manifest.value("status", std::string()) != "prepared")
@@ -2955,6 +2957,7 @@ void MainFrame::approve_orto_gcode()
                 throw std::runtime_error("The prepared manifest does not contain the required three profile records.");
             profile_files = prepared_manifest["profiles"];
             manifest["prepared_gcode_sha256"] = context->orto_expected_gcode_sha256;
+            manifest["prepared_manifest_sha256"] = context->orto_review_manifest_sha256;
             manifest["prepared_manifest"] = context->orto_review_manifest_path;
         } else {
             if (!context->input_files.empty()) {

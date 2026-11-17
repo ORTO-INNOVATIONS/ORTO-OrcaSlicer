@@ -1683,7 +1683,9 @@ int CLI::run(int argc, char **argv)
             if (val("gcode_file") != gcode.filename().string() || val("source_stl").empty() || !prepared.contains("profiles") || !prepared["profiles"].is_array() || prepared["profiles"].size() != 3) throw std::runtime_error("The preparation manifest is missing source STL, G-code filename or profile records.");
             m_orto_expected_gcode_sha256 = val("gcode_sha256");
             if (m_orto_expected_gcode_sha256.empty() || orto_sha256_file(gcode.string()) != m_orto_expected_gcode_sha256) throw std::runtime_error("The G-code has changed since headless preparation; approval is blocked.");
-            m_orto_review_manifest_path = sidecar.string(); m_orto_review_verified = true;
+            m_orto_review_manifest_path = sidecar.string();
+            m_orto_review_manifest_sha256 = orto_sha256_file(sidecar.string());
+            m_orto_review_verified = true;
         } catch (const std::exception& error) { boost::nowide::cerr << "ORTO Production Review validation failed: " << error.what() << std::endl; return CLI_INVALID_PARAMS; }
     }
     BOOST_LOG_TRIVIAL(info) << "finished setup params, argc="<< argc << std::endl;
@@ -1910,6 +1912,7 @@ int CLI::run(int argc, char **argv)
         params.orto_job_id = m_orto_job_id;
         params.orto_output_dir = m_orto_output_dir;
         params.orto_review_manifest_path = m_orto_review_manifest_path;
+        params.orto_review_manifest_sha256 = m_orto_review_manifest_sha256;
         params.orto_expected_gcode_sha256 = m_orto_expected_gcode_sha256;
         params.orto_review_verified = m_orto_review_verified;
 
