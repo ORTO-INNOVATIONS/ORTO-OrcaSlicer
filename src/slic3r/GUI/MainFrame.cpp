@@ -41,6 +41,7 @@
 #include <iomanip>
 #include <cctype>
 #include <openssl/evp.h>
+#include <boost/nowide/fstream.hpp>
 #include <algorithm>
 #include <wx/dirdlg.h>
 #include <exception>
@@ -2826,7 +2827,7 @@ void MainFrame::approve_orto_gcode()
     };
 
     const auto sha256_file = [](const std::string& path) -> std::string {
-        std::ifstream input(path, std::ios::binary);
+        boost::nowide::ifstream input(path, std::ios::binary);
         if (!input)
             throw std::runtime_error("Cannot open file for SHA-256: " + path);
 
@@ -2928,7 +2929,7 @@ void MainFrame::approve_orto_gcode()
 
         temporary_manifest = boost::filesystem::path(output_manifest.string() + ".tmp");
         {
-            std::ofstream output(temporary_manifest.string(), std::ios::binary | std::ios::trunc);
+            boost::nowide::ofstream output(temporary_manifest.string(), std::ios::binary | std::ios::trunc);
             if (!output)
                 throw std::runtime_error("Cannot create ORTO approval manifest.");
             output << manifest.dump(2) << std::endl;
