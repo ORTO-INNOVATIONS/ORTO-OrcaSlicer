@@ -2565,63 +2565,30 @@ int CLI::run(int argc, char **argv)
         }
     }
 
-    std::unique_ptr<PresetBundle> cli_preset_bundle;
-    auto ensure_cli_preset_bundle = [&cli_preset_bundle](std::string &error) -> PresetBundle * {
-        if (cli_preset_bundle)
-            return cli_preset_bundle.get();
-        try {
-            AppConfig app_config;
-            const std::string app_config_error = app_config.load_if_exists();
-            if (!app_config_error.empty()) {
-                BOOST_LOG_TRIVIAL(warning) << "Ignoring invalid app config during CLI preset resolution: " << app_config_error;
-                app_config.reset();
-            }
-
-            auto bundle = std::make_unique<PresetBundle>();
-            std::string load_error;
-            bundle->load_presets(app_config, config_substitution_rule,
-                                 PresetBundle::PresetPreferences(), &load_error, true);
-            if (!load_error.empty()) {
-                error = "Failed to load presets for inheritance resolution: " + load_error;
-                return nullptr;
-            }
-            cli_preset_bundle = std::move(bundle);
-            return cli_preset_bundle.get();
-        } catch (const std::exception &ex) {
-            error = ex.what();
-            return nullptr;
-        }
-    };
-
-    // One resolver for the whole run, so presets from the same vendor tree share its load.
+    // Keep CLI preset resolution independent from the user's complete preset collection.
+    // Loading every user preset here made an unrelated broken profile (for example a stale
+    // Dremel process JSON) abort loading an external Elegoo profile. The resolver below loads
+    // only the required vendor system bundle on demand.
     std::unique_ptr<PresetBundle> system_preset_resolver;
     auto ensure_system_preset_resolver = [&system_preset_resolver]() -> PresetBundle & {
         if (!system_preset_resolver)
             system_preset_resolver = std::make_unique<PresetBundle>();
         return *system_preset_resolver;
     };
-    auto resolve_preset = [&ensure_cli_preset_bundle, &ensure_system_preset_resolver](const std::string &file, DynamicPrintConfig &config,
-                                                                                      std::string &config_type, const std::string &config_from,
-                                                                                      bool probe_type, std::string &error) {
+    auto resolve_preset = [&ensure_system_preset_resolver](const std::string &file, DynamicPrintConfig &config,
+                                                           std::string &config_type, const std::string &config_from,
+                                                           bool probe_type, std::string &error) {
         const auto *inherits = config.option<ConfigOptionString>(BBL_JSON_KEY_INHERITS);
         if (!probe_type && (inherits == nullptr || inherits->value.empty()))
             return true;
 
-        PresetBundle                 *bundle = nullptr;
-        bool                          allow_source_manifest = false;
-        if (config_from == "system") {
-            bundle                = &ensure_system_preset_resolver();
-            allow_source_manifest = true;
-        } else {
-            bundle = ensure_cli_preset_bundle(error);
-            if (bundle == nullptr)
-                return false;
-        }
+        PresetBundle &bundle = ensure_system_preset_resolver();
+        const bool allow_source_manifest = true;
 
         if (probe_type) {
             Preset::Type preset_type;
-            if (!bundle->resolve_preset_config_type(config, preset_type, file, config_substitution_rule,
-                                                    error, allow_source_manifest))
+            if (!bundle.resolve_preset_config_type(config, preset_type, file, config_substitution_rule,
+                                                   error, allow_source_manifest))
                 return false;
             config_type = Preset::get_type_string(preset_type);
             return true;
@@ -2638,13 +2605,13 @@ int CLI::run(int argc, char **argv)
             error = "Unsupported preset type: " + config_type;
             return false;
         }
+
         if (config_from == "User" || config_from == "user") {
-            // User profiles passed through --load-settings / --load-filaments may live
-            // outside the active preset bundle. Resolve their inheritance from the
-            // already loaded system collection, matching GUI_App::read_startup_preset().
-            // Prefer exact source-file identity when the profile is already installed.
-            if (bundle->resolve_preset_config(config, preset_type, file, config_substitution_rule,
-                                              error, false))
+            // External user presets are resolved against their system parent directly.
+            // Do not load the entire user preset folder: unrelated user JSON files must
+            // never prevent a CLI job from using the explicitly supplied profiles.
+            if (bundle.resolve_preset_config(config, preset_type, file, config_substitution_rule,
+                                             error, true))
                 return true;
             if (error == "Preset identity is ambiguous")
                 return false;
@@ -2653,68 +2620,41 @@ int CLI::run(int argc, char **argv)
             if (user_inherits == nullptr || user_inherits->value.empty())
                 return true;
 
-            PresetCollection *collection = nullptr;
-            switch (preset_type) {
-            case Preset::TYPE_PRINT:    collection = &bundle->prints;    break;
-            case Preset::TYPE_FILAMENT: collection = &bundle->filaments; break;
-            case Preset::TYPE_PRINTER:  collection = &bundle->printers;  break;
-            default:
-                error = "Unsupported preset type";
+            DynamicPrintConfig parent_config;
+            if (!bundle.resolve_system_preset(parent_config, preset_type, user_inherits->value,
+                                              config_substitution_rule, error)) {
+                error = "Parent preset '" + user_inherits->value + "' could not be resolved: " + error;
                 return false;
             }
 
-            const Preset *parent = collection->find_preset2(user_inherits->value, true);
-            if (parent == nullptr) {
-                error = "Parent preset '" + user_inherits->value + "' was not found in the loaded bundle";
-                return false;
-            }
-
-            DynamicPrintConfig resolved(parent->config);
-            resolved.apply(config, true);
-            config = std::move(resolved);
+            parent_config.apply(config, true);
+            config = std::move(parent_config);
             error.clear();
             BOOST_LOG_TRIVIAL(info) << "CLI: resolved external user preset '" << file
-                                    << "' from parent '" << user_inherits->value << "'";
+                                    << "' from system parent '" << user_inherits->value << "'";
             return true;
         }
 
-        return bundle->resolve_preset_config(config, preset_type, file, config_substitution_rule,
-                                             error, allow_source_manifest);
+        return bundle.resolve_preset_config(config, preset_type, file, config_substitution_rule,
+                                            error, allow_source_manifest);
     };
 
-    //ORCA: list the keys a user preset overrides relative to its system parent, for the
-    //      `different_settings_to_system` column of an exported 3MF. Without it the CLI
-    //      writes an empty column, so re-opening a CLI-exported project in the GUI shows
-    //      spurious "unsaved changes" and can revert inherited process/filament/machine
-    //      values to system defaults.
-    //
-    //      The parent comes from the preset bundle that inherits resolution already builds,
-    //      so this adds no extra loading. Returns "" whenever the parent cannot be resolved,
-    //      which is exactly the previous behaviour.
-    auto cli_different_settings = [&ensure_cli_preset_bundle](const DynamicPrintConfig &resolved,
-                                                              const std::string        &parent_name,
-                                                              Preset::Type              type) -> std::string {
+    // Record differences from the system parent without loading unrelated user presets.
+    auto cli_different_settings = [&ensure_system_preset_resolver](const DynamicPrintConfig &resolved,
+                                                                    const std::string        &parent_name,
+                                                                    Preset::Type              type) -> std::string {
         if (parent_name.empty())
             return std::string();
-        std::string   error;
-        PresetBundle *bundle = ensure_cli_preset_bundle(error);
-        if (bundle == nullptr) {
-            BOOST_LOG_TRIVIAL(warning) << "CLI: no preset bundle for different_settings_to_system: " << error;
+
+        DynamicPrintConfig parent_config;
+        std::string error;
+        if (!ensure_system_preset_resolver().resolve_system_preset(parent_config, type, parent_name,
+                                                                   config_substitution_rule, error)) {
+            BOOST_LOG_TRIVIAL(warning) << "CLI: parent preset '" << parent_name
+                                       << "' not found for different_settings_to_system: " << error;
             return std::string();
         }
-        const PresetCollection *collection = nullptr;
-        switch (type) {
-        case Preset::TYPE_PRINT:    collection = &bundle->prints;    break;
-        case Preset::TYPE_FILAMENT: collection = &bundle->filaments; break;
-        case Preset::TYPE_PRINTER:  collection = &bundle->printers;  break;
-        default:                    return std::string();
-        }
-        const Preset *parent = collection->find_preset2(parent_name, true);
-        if (parent == nullptr) {
-            BOOST_LOG_TRIVIAL(warning) << boost::format("CLI: parent preset '%1%' not found; leaving different_settings_to_system empty")%parent_name;
-            return std::string();
-        }
-        std::vector<std::string> keys = resolved.diff(parent->config);
+        std::vector<std::string> keys = resolved.diff(parent_config);
         //ORCA: preset metadata, not user-tunable settings. compatible_printers /
         //      compatible_prints have their own tracking columns and would double-count.
         keys.erase(std::remove_if(keys.begin(), keys.end(), [](const std::string &k) {
