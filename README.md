@@ -1,12 +1,12 @@
 # ORTO OrcaSlicer
 
-**Текущая версия: `2.6.0-ORTO.20` — TEST (IN DEVELOPMENT)**  
-Последняя проверенная Windows x64 Portable-версия — `2.6.0-ORTO.18 RELEASE` (GitHub Actions #75, коммит `c7b4ee5`). Текущая `2.6.0-ORTO.20 TEST` расширяет производственный процесс тремя этапами: Production GUI, Headless Production и Production Review; сборочная и функциональная проверка ещё не завершена.
+**Текущая стабильная версия: `2.6.0-ORTO.20 RELEASE` (VERIFIED)**  
+Windows x64 Portable, GitHub Actions [#113](https://github.com/ORTO-INNOVATIONS/ORTO-OrcaSlicer/actions/runs/44068537346), commit [`9f78e7e`](https://github.com/ORTO-INNOVATIONS/ORTO-OrcaSlicer/commit/9f78e7e0c70f512951a130dc3a26acb6cf567a3f). Headless CLI с внешними профилями Elegoo printer/process/filament и формированием prepared G-code + sidecar-манифеста проверен пользователем на Windows.
 
 ## Статус версии
 
-- `2.6.0-ORTO.18 RELEASE (VERIFIED)` — последняя версия, подтверждённая пользователем на Windows x64 Portable: штатный GUI и CLI с внешними JSON-профилями принтера, процесса и филамента.
-- `2.6.0-ORTO.20 TEST` — текущая разработка трёх производственных этапов ORTO: Production GUI, Headless Production и Production Review. Сборочная и функциональная проверка этой версии ещё не завершена.
+- `2.6.0-ORTO.20 RELEASE (VERIFIED)` — текущая стабильная версия. Сборка Windows x64 Portable завершилась успешно; пользователь подтвердил работу Headless CLI с тремя внешними JSON-профилями, создание G-code и `.orto-prepared.json`.
+- Предыдущий опубликованный релиз — `2.6.0-ORTO.8`; версия `.20` заменяет его как актуальный стабильный выпуск.
 
 ## Описание ORTO Edition
 
@@ -55,7 +55,7 @@
 
 ## Интеграция с ORTO
 
-Производственный запуск выполняется только из ORTO Docs. Система передаёт локальному Windows Helper одноразовый контекст заявки, путь к STL, выбранный принтер и три оригинальных JSON-профиля OrcaSlicer.
+Производственный запуск инициируется из ORTO Docs. Для старта Headless Production Docs передаёт локальному Windows Folder Helper одноразовый контекст заявки, путь к STL, выбранный принтер и три оригинальных JSON-профиля OrcaSlicer. Folder Helper служит локальным мостом запуска и не оркестрирует этап проверки. После появления подготовленного пакета запуск Production Review и передача подтверждённого результата относятся к STL Distributor.
 
 ### Параметры производственного запуска
 
@@ -126,8 +126,9 @@ orto-orca-slicer.exe ^
 Рекомендуемый принцип развёртывания:
 
 1. Распаковать Portable-сборку в отдельный каталог.
-2. Настроить путь к `orto-orca-slicer.exe` в ORTO Docs/локальном Helper.
-3. Запускать приложение обычным способом для повседневной работы или из ORTO Docs с производственным контекстом.
+2. Настроить путь к `orto-orca-slicer.exe` для локального запуска Headless Production из ORTO Docs через существующий Folder Helper.
+3. Настроить STL Distributor на рабочие каталоги prepared/approved и на запуск Production Review.
+4. Запускать приложение обычным способом для повседневной работы или из производственного процесса ORTO.
 
 Одна Portable-сборка используется и для повседневной работы, и для производственных запусков. Отдельная установка оригинального OrcaSlicer для обычных задач не требуется.
 

@@ -8,10 +8,10 @@ on:
         required: true
         type: string
       tag:
-        description: 'Release tag (for this release: v2.6.0-ORTO.8)'
+        description: 'Release tag (must match version.inc; stable release)'
         required: true
         type: string
-        default: v2.6.0-ORTO.8
+        default: v2.6.0-ORTO.20
 
 permissions:
   contents: write
@@ -88,7 +88,12 @@ jobs:
           - Отдельная настройка положения Support Blocker во вкладке Preferences → ORTO (по умолчанию 20 мм).
           - Значения подъёма модели и Support Blocker сохраняются в настройках и применяются при подготовке; они не зашиты как фиксированные величины.
           - Загрузка профилей принтера, процесса и филамента из JSON.
-          - После подготовки оператор проверяет расположение шва модели и вручную запускает экспорт G-code.
+          - Production GUI: оператор вручную запускает Slice и подтверждает готовый G-code.
+          - Headless Production: CLI выполняет Cosmetic Shell и слайсинг один раз, создаёт prepared G-code и sidecar-манифест с SHA-256 и профилями.
+          - Production Review: STL Distributor запускает просмотр подготовленного G-code; оператор подтверждает именно открытый файл без повторной нарезки.
+          - Headless CLI проверен с внешними JSON-профилями принтера, процесса и филамента Elegoo.
+          - Неподтверждённый prepared G-code не передаётся в производственную очередь; downstream получает только approved G-code и manifest.
+          - Folder Helper используется как локальный мост запуска Headless из ORTO Docs, но не оркестрирует Production Review.
 
           ## Формат распространения
           Только Windows x64 Portable. Установщик не предоставляется.

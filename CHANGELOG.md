@@ -1,6 +1,6 @@
 # Changelog — ORTO OrcaSlicer
 
-## 2.6.0-ORTO.20 TEST — IN PROGRESS
+## 2.6.0-ORTO.20 RELEASE — VERIFIED
 
 - Сохранён Production GUI: автоматический Cosmetic Shell, ручной запуск Slice оператором и подтверждение только после валидного G-code.
 - Добавлен Headless Production: `--orto-stage headless` выполняет Cosmetic Shell и CLI-слайсинг один раз, создаёт prepared G-code и sidecar-манифест с SHA-256 и тремя профилями.
@@ -9,7 +9,10 @@
 - Кнопка «Подтвердить G-code» получила немного более яркую палитру; прежние условия активации в Production GUI сохранены.
 - Подтверждение в Review привязано к тем же байтам G-code, которые создал headless-этап; SHA-256 проверяется до и после копирования.
 - Подготовительный G-code и sidecar сохраняются в отдельном `--orto-prepared-dir`, отличном от `--orto-output-dir`, чтобы STL Distributor не видел неподтверждённый результат.
-- README и регламент производственного режима обновлены. Сборочная и функциональная проверка .20 ещё не завершена; последняя подтверждённая версия — 2.6.0-ORTO.18 RELEASE.
+- Исправлена изоляция разрешения наследования внешних CLI-профилей: Headless использует системный preset bundle и не загружает постороннюю коллекцию пользовательских профилей, способную прервать запуск.
+- Исправлен захват `this` в двух лямбдах разрешения CLI-пресетов; Windows Portable Build #113 завершился SUCCESS (commit `9f78e7e`).
+- Пользователь проверил на Windows Portable загрузку внешних JSON-профилей Elegoo printer/process/filament, выполнение слайсинга и создание prepared G-code вместе с `.orto-prepared.json`.
+- Версия зафиксирована как стабильная; формат распространения — только Windows x64 Portable.
 
 ## 2.6.0-ORTO.19 TEST — SUPERSEDED
 
