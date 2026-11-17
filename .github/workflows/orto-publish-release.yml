@@ -154,7 +154,7 @@ jobs:
 
           asset_name="ORTO-OrcaSlicer-Windows-x64-Portable-$version.zip"
           asset_path="$GITHUB_WORKSPACE/upload/$asset_name"
-          (cd artifacts && zip -q -r -0 "$asset_path" .)
+          (cd artifacts && zip -q -r -6 "$asset_path" .)
           test -s "$asset_path"
 
           release_title="ORTO OrcaSlicer $version RELEASE"
