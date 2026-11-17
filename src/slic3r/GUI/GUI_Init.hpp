@@ -41,6 +41,8 @@ struct GUI_InitParams
     std::string                 orto_mode;
     std::string                 orto_algorithm;
     std::string                 orto_request_number;
+    std::string                 orto_request_id;
+    std::string                 orto_printer_id;
     std::string                 orto_request_item_id;
     std::string                 orto_request_unit_id;
     std::string                 orto_job_id;
