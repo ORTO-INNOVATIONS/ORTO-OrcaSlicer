@@ -2854,6 +2854,7 @@ void MainFrame::approve_orto_gcode()
 
     boost::filesystem::path output_gcode;
     boost::filesystem::path output_manifest;
+    boost::filesystem::path temporary_manifest;
     try {
         const std::string request_part = safe_filename_part(context->orto_request_number);
         const std::string job_part = safe_filename_part(context->orto_job_id);
@@ -2878,22 +2879,41 @@ void MainFrame::approve_orto_gcode()
         manifest["schema_version"] = 1;
         manifest["event"] = "gcode_approved";
         manifest["status"] = "approved";
-        manifest["created_at_unix"] = static_cast<long long>(std::time(nullptr));
+        const std::time_t created_at = std::time(nullptr);
+        std::tm utc_time{};
+#ifdef _WIN32
+        gmtime_s(&utc_time, &created_at);
+#else
+        gmtime_r(&created_at, &utc_time);
+#endif
+        std::ostringstream created_at_text;
+        created_at_text << std::put_time(&utc_time, "%Y-%m-%dT%H:%M:%SZ");
+        manifest["created_at"] = created_at_text.str();
         manifest["request_number"] = context->orto_request_number;
+        manifest["request_id"] = context->orto_request_id;
+        manifest["printer_id"] = context->orto_printer_id;
         manifest["request_item_id"] = context->orto_request_item_id;
         manifest["request_unit_id"] = context->orto_request_unit_id;
         manifest["job_id"] = context->orto_job_id;
         manifest["algorithm"] = context->orto_algorithm;
         manifest["algorithm_version"] = "1";
-        manifest["source_stl"] = context->input_files.empty() ? "" : context->input_files.front();
+        std::string source_stl;
+        if (!context->input_files.empty()) {
+            const std::string extension = boost::filesystem::path(context->input_files.front()).extension().string();
+            if (extension == ".stl" || extension == ".STL")
+                source_stl = context->input_files.front();
+        }
+        manifest["source_stl"] = source_stl;
         manifest["gcode_file"] = output_gcode.filename().string();
         manifest["gcode_sha256"] = gcode_hash;
 
         nlohmann::json profile_files = nlohmann::json::array();
-        for (const std::string& path : context->load_configs) {
+        for (size_t index = 0; index < context->load_configs.size(); ++index) {
+            const std::string& path = context->load_configs[index];
             if (!boost::filesystem::is_regular_file(path))
                 throw std::runtime_error("A loaded printer/process profile is no longer available: " + path);
-            profile_files.push_back({{"role", "settings"}, {"path", path}, {"sha256", sha256_file(path)}});
+            const char* role = index == 0 ? "printer" : (index == 1 ? "process" : "settings");
+            profile_files.push_back({{"role", role}, {"path", path}, {"sha256", sha256_file(path)}});
         }
         for (const std::string& path : context->load_filaments) {
             if (!boost::filesystem::is_regular_file(path))
@@ -2902,7 +2922,7 @@ void MainFrame::approve_orto_gcode()
         }
         manifest["profiles"] = std::move(profile_files);
 
-        const boost::filesystem::path temporary_manifest(output_manifest.string() + ".tmp");
+        temporary_manifest = boost::filesystem::path(output_manifest.string() + ".tmp");
         {
             std::ofstream output(temporary_manifest.string(), std::ios::binary | std::ios::trunc);
             if (!output)
@@ -2917,6 +2937,8 @@ void MainFrame::approve_orto_gcode()
         boost::system::error_code ec;
         if (!output_gcode.empty())
             boost::filesystem::remove(output_gcode, ec);
+        if (!temporary_manifest.empty())
+            boost::filesystem::remove(temporary_manifest, ec);
         wxMessageBox(wxString::FromUTF8(error.what()), _L("ORTO production"), wxOK | wxICON_ERROR, this);
         return;
     }
