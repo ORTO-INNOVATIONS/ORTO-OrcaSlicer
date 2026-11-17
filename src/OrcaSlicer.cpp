@@ -1804,6 +1804,15 @@ int CLI::run(int argc, char **argv)
     }
 
     bool start_gui = m_actions.empty() && !downward_check;
+    if (m_orto_production_mode && !start_gui) {
+        boost::nowide::cerr << "ORTO production mode must start the interactive GUI; CLI slicing actions are not allowed in an approval session." << std::endl;
+        return CLI_INVALID_PARAMS;
+    }
+    if (m_orto_production_mode && m_orto_algorithm == "cosmetic_shell" &&
+        (m_input_files.size() != 1 || !boost::algorithm::iends_with(m_input_files.front(), ".stl"))) {
+        boost::nowide::cerr << "ORTO cosmetic_shell production mode requires exactly one STL input file." << std::endl;
+        return CLI_INVALID_PARAMS;
+    }
     if (start_gui) {
         BOOST_LOG_TRIVIAL(info) << "no action, start gui directly" << std::endl;
 #ifdef SLIC3R_GUI
