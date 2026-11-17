@@ -74,6 +74,8 @@
 #include <atomic>
 #include <new>
 #include <optional>
+#include <cctype>
+#include <openssl/evp.h>
 
 #if defined(__linux__) || defined(__LINUX__)
 #include <condition_variable>
@@ -178,6 +180,33 @@ using json = nlohmann::json;
 #endif /* SLIC3R_GUI */
 
 using namespace Slic3r;
+
+static std::string orto_safe_filename_part(const std::string& value)
+{
+    std::string safe;
+    safe.reserve(value.size());
+    for (unsigned char ch : value)
+        safe.push_back((std::isalnum(ch) || ch == '-' || ch == '_') ? char(ch) : '_');
+    while (!safe.empty() && safe.front() == '_') safe.erase(safe.begin());
+    while (!safe.empty() && safe.back() == '_') safe.pop_back();
+    return safe;
+}
+
+static std::string orto_sha256_file(const std::string& path)
+{
+    boost::nowide::ifstream input(path, std::ios::binary);
+    if (!input) throw std::runtime_error("Cannot open file for SHA-256: " + path);
+    std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+    if (!ctx || EVP_DigestInit_ex(ctx.get(), EVP_sha256(), nullptr) != 1) throw std::runtime_error("Cannot initialize SHA-256");
+    char buffer[64 * 1024];
+    while (input) { input.read(buffer, sizeof(buffer)); const std::streamsize n = input.gcount(); if (n > 0 && EVP_DigestUpdate(ctx.get(), buffer, static_cast<size_t>(n)) != 1) throw std::runtime_error("Cannot calculate SHA-256"); }
+    if (!input.eof()) throw std::runtime_error("Cannot read file for SHA-256: " + path);
+    unsigned char digest[EVP_MAX_MD_SIZE]; unsigned int size = 0;
+    if (EVP_DigestFinal_ex(ctx.get(), digest, &size) != 1) throw std::runtime_error("Cannot finalize SHA-256");
+    std::ostringstream out; out << std::hex << std::setfill('0');
+    for (unsigned int i = 0; i < size; ++i) out << std::setw(2) << static_cast<unsigned int>(digest[i]);
+    return out.str();
+}
 
 /*typedef struct _error_message{
     int code;
@@ -1363,6 +1392,7 @@ int CLI::run(int argc, char **argv)
     std::vector<std::string> orto_cli_arguments;
     std::vector<char*> orto_cli_argv;
     std::string requested_orto_mode;
+    std::string requested_orto_stage;
     std::string requested_orto_algorithm;
     std::string requested_orto_request_number;
     std::string requested_orto_request_id;
@@ -1397,6 +1427,7 @@ int CLI::run(int argc, char **argv)
         bool consumed = false;
         const std::pair<const char*, std::string*> orto_options[] = {
             {"--orto-mode", &requested_orto_mode},
+            {"--orto-stage", &requested_orto_stage},
             {"--orto-algorithm", &requested_orto_algorithm},
             {"--orto-request-number", &requested_orto_request_number},
             {"--orto-request-id", &requested_orto_request_id},
@@ -1430,6 +1461,16 @@ int CLI::run(int argc, char **argv)
                             << ". Supported value: production." << std::endl;
         return CLI_INVALID_PARAMS;
     }
+    if (!requested_orto_mode.empty()) {
+        if (requested_orto_stage.empty()) requested_orto_stage = "gui";
+        if (requested_orto_stage != "gui" && requested_orto_stage != "headless" && requested_orto_stage != "review") {
+            boost::nowide::cerr << "Unknown --orto-stage value: " << requested_orto_stage << ". Supported values: gui, headless, review." << std::endl;
+            return CLI_INVALID_PARAMS;
+        }
+    } else if (!requested_orto_stage.empty()) {
+        boost::nowide::cerr << "--orto-stage requires --orto-mode production." << std::endl;
+        return CLI_INVALID_PARAMS;
+    }
     if (!requested_orto_algorithm.empty() && requested_orto_algorithm != "cosmetic_shell") {
         boost::nowide::cerr << "Unknown --orto-algorithm value: " << requested_orto_algorithm
                             << ". Supported value: cosmetic_shell." << std::endl;
@@ -1459,6 +1500,8 @@ int CLI::run(int argc, char **argv)
     argv = orto_cli_argv.data();
 
     m_orto_production_mode = requested_orto_mode == "production";
+    m_orto_stage = requested_orto_stage;
+    m_orto_headless = m_orto_production_mode && m_orto_stage == "headless";
     m_orto_algorithm = requested_orto_algorithm;
     m_orto_request_number = requested_orto_request_number;
     m_orto_request_id = requested_orto_request_id;
@@ -1617,6 +1660,24 @@ int CLI::run(int argc, char **argv)
         boost::nowide::cerr << "setup params error" << std::endl;
         return CLI_INVALID_PARAMS;
     }
+    if (m_orto_production_mode && m_orto_stage == "review") {
+        try {
+            if (m_input_files.size() != 1 || !is_gcode_file(m_input_files.front())) throw std::runtime_error("Production Review requires exactly one G-code input file.");
+            const boost::filesystem::path gcode(m_input_files.front());
+            const boost::filesystem::path sidecar(gcode.string() + ".orto-prepared.json");
+            if (!boost::filesystem::is_regular_file(gcode) || !boost::filesystem::is_regular_file(sidecar)) throw std::runtime_error("The prepared G-code or its ORTO preparation manifest is missing.");
+            json prepared; boost::nowide::ifstream input(sidecar.string(), std::ios::binary);
+            if (!input) throw std::runtime_error("Cannot open the ORTO preparation manifest.");
+            input >> prepared;
+            const auto val = [&prepared](const char* key) -> std::string { return prepared.contains(key) && prepared[key].is_string() ? prepared[key].get<std::string>() : std::string(); };
+            if (!prepared.contains("schema_version") || prepared["schema_version"] != 1 || val("event") != "gcode_prepared" || val("status") != "prepared") throw std::runtime_error("Unsupported ORTO preparation manifest schema or status.");
+            if (val("request_number") != m_orto_request_number || val("request_id") != m_orto_request_id || val("request_item_id") != m_orto_request_item_id || val("request_unit_id") != m_orto_request_unit_id || val("printer_id") != m_orto_printer_id || val("job_id") != m_orto_job_id || val("algorithm") != m_orto_algorithm) throw std::runtime_error("The preparation manifest does not match this production job.");
+            if (val("gcode_file") != gcode.filename().string() || val("source_stl").empty() || !prepared.contains("profiles") || !prepared["profiles"].is_array() || prepared["profiles"].size() != 3) throw std::runtime_error("The preparation manifest is missing source STL, G-code filename or profile records.");
+            m_orto_expected_gcode_sha256 = val("gcode_sha256");
+            if (m_orto_expected_gcode_sha256.empty() || orto_sha256_file(gcode.string()) != m_orto_expected_gcode_sha256) throw std::runtime_error("The G-code has changed since headless preparation; approval is blocked.");
+            m_orto_review_manifest_path = sidecar.string(); m_orto_review_verified = true;
+        } catch (const std::exception& error) { boost::nowide::cerr << "ORTO Production Review validation failed: " << error.what() << std::endl; return CLI_INVALID_PARAMS; }
+    }
     BOOST_LOG_TRIVIAL(info) << "finished setup params, argc="<< argc << std::endl;
     std::string temp_path = per_user_temp_dir(wxFileName::GetTempDir().utf8_str().data(), per_user_temp_id());
     // Some consumers write into the temp root directly, so create it up front.
@@ -1656,6 +1717,7 @@ int CLI::run(int argc, char **argv)
     float old_max_radius = 0.f, old_height_to_rod = 0.f, old_height_to_lid = 0.f;
     std::vector<double> old_max_layer_height, old_min_layer_height;
     std::string outfile_dir              =  m_config.opt_string("outputdir", true);
+    if (m_orto_headless) outfile_dir = m_orto_output_dir;
     const std::vector<std::string>              &load_configs               = m_config.option<ConfigOptionStrings>("load_settings", true)->values;
     const std::vector<std::string>              &uptodate_configs          = m_config.option<ConfigOptionStrings>("uptodate_settings", true)->values;
     const std::vector<std::string>              &uptodate_filaments          = m_config.option<ConfigOptionStrings>("uptodate_filaments", true)->values;
@@ -1695,6 +1757,10 @@ int CLI::run(int argc, char **argv)
             record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, message, sliced_info);
             flush_and_exit(CLI_INVALID_PARAMS);
         }
+        const std::string request_part = orto_safe_filename_part(m_orto_request_number), job_part = orto_safe_filename_part(m_orto_job_id);
+        if (request_part.empty() || job_part.empty()) { const std::string message = "ORTO request number/job ID cannot form a safe output filename."; record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, message, sliced_info); flush_and_exit(CLI_INVALID_PARAMS); }
+        const boost::filesystem::path prepared = boost::filesystem::path(outfile_dir) / (request_part + "_" + job_part + ".prepared.gcode");
+        if (boost::filesystem::exists(prepared) || boost::filesystem::exists(prepared.string() + ".orto-prepared.json")) { const std::string message = "A prepared output already exists for this ORTO job; duplicate headless slicing is blocked."; record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, message, sliced_info); flush_and_exit(CLI_INVALID_PARAMS); }
     }
 
     // --no-check skips the check behind the only NON_CRITICAL warning --strict acts on
@@ -1777,18 +1843,17 @@ int CLI::run(int argc, char **argv)
     }
 
     bool start_gui = m_actions.empty() && !downward_check;
-    if (m_orto_production_mode && !start_gui) {
-        boost::nowide::cerr << "ORTO production mode must start the interactive GUI; CLI slicing actions are not allowed in an approval session." << std::endl;
-        return CLI_INVALID_PARAMS;
-    }
-    if (m_orto_production_mode && m_orto_algorithm == "cosmetic_shell" &&
-        (m_input_files.size() != 1 || !boost::algorithm::iends_with(m_input_files.front(), ".stl"))) {
-        boost::nowide::cerr << "ORTO cosmetic_shell production mode requires exactly one STL input file." << std::endl;
-        return CLI_INVALID_PARAMS;
-    }
-    if (m_orto_production_mode && (load_configs.size() != 2 || load_filaments.size() != 1)) {
-        boost::nowide::cerr << "ORTO production mode requires exactly three JSON profiles: printer and process via --load-settings, plus one filament via --load-filaments." << std::endl;
-        return CLI_INVALID_PARAMS;
+    if (m_orto_production_mode) {
+        if (m_orto_stage == "headless") {
+            if (start_gui || m_actions.size() != 1 || m_actions.front() != "slice" || !m_transforms.empty()) { boost::nowide::cerr << "ORTO headless stage requires only the native --slice action; GUI actions and extra transforms are not allowed." << std::endl; return CLI_INVALID_PARAMS; }
+            if (m_input_files.size() != 1 || !boost::algorithm::iends_with(m_input_files.front(), ".stl")) { boost::nowide::cerr << "ORTO headless stage requires exactly one STL input file." << std::endl; return CLI_INVALID_PARAMS; }
+            if (load_configs.size() != 2 || load_filaments.size() != 1) { boost::nowide::cerr << "ORTO headless stage requires printer/process/filament JSON profiles." << std::endl; return CLI_INVALID_PARAMS; }
+        } else if (m_orto_stage == "gui") {
+            if (!start_gui || m_input_files.size() != 1 || !boost::algorithm::iends_with(m_input_files.front(), ".stl")) { boost::nowide::cerr << "ORTO Production GUI requires one STL and no CLI slicing actions." << std::endl; return CLI_INVALID_PARAMS; }
+            if (load_configs.size() != 2 || load_filaments.size() != 1) { boost::nowide::cerr << "ORTO Production GUI requires printer/process/filament JSON profiles." << std::endl; return CLI_INVALID_PARAMS; }
+        } else if (m_orto_stage == "review") {
+            if (!start_gui || !m_orto_review_verified || !load_configs.empty() || !load_filaments.empty()) { boost::nowide::cerr << "ORTO Production Review requires one verified prepared G-code, GUI mode and no profile reload." << std::endl; return CLI_INVALID_PARAMS; }
+        }
     }
     if (start_gui) {
         BOOST_LOG_TRIVIAL(info) << "no action, start gui directly" << std::endl;
@@ -1813,6 +1878,7 @@ int CLI::run(int argc, char **argv)
         params.load_filaments = load_filaments;
         params.extra_config = std::move(m_extra_config);
         params.orto_mode = m_orto_production_mode ? "production" : "";
+        params.orto_stage = m_orto_stage;
         params.orto_algorithm = m_orto_algorithm;
         params.orto_request_number = m_orto_request_number;
         params.orto_request_id = m_orto_request_id;
@@ -1821,6 +1887,9 @@ int CLI::run(int argc, char **argv)
         params.orto_request_unit_id = m_orto_request_unit_id;
         params.orto_job_id = m_orto_job_id;
         params.orto_output_dir = m_orto_output_dir;
+        params.orto_review_manifest_path = m_orto_review_manifest_path;
+        params.orto_expected_gcode_sha256 = m_orto_expected_gcode_sha256;
+        params.orto_review_verified = m_orto_review_verified;
 
         std::vector<std::string>    gcode_files;
         std::vector<std::string>    non_gcode_files;
@@ -7619,8 +7688,7 @@ int CLI::run(int argc, char **argv)
                                         outfile = part_plate->get_tmp_gcode_path();
                                     }
                                     else if (m_orto_headless && index == 0 && m_input_files.size() == 1) {
-                                        const std::string output_name =
-                                            boost::filesystem::path(m_input_files.front()).stem().string() + ".gcode";
+                                        const std::string output_name = orto_safe_filename_part(m_orto_request_number) + "_" + orto_safe_filename_part(m_orto_job_id) + ".prepared.gcode";
                                         outfile = (boost::filesystem::path(outfile_dir) / output_name).string();
                                         part_plate->set_tmp_gcode_path(outfile);
                                     }
@@ -8565,6 +8633,33 @@ int CLI::run(int argc, char **argv)
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ", Finished" << std::endl;
     global_current_time = (long long)Slic3r::Utils::get_current_time_utc();
     sliced_info.export_time = (size_t) (global_current_time - global_begin_time);
+
+    if (m_orto_headless && m_orto_production_mode) {
+        try {
+            const std::string base = orto_safe_filename_part(m_orto_request_number) + "_" + orto_safe_filename_part(m_orto_job_id);
+            const boost::filesystem::path gcode = boost::filesystem::path(outfile_dir) / (base + ".prepared.gcode");
+            const boost::filesystem::path sidecar(gcode.string() + ".orto-prepared.json");
+            if (!boost::filesystem::is_regular_file(gcode) || boost::filesystem::file_size(gcode) == 0) throw std::runtime_error("Headless slicing completed without a non-empty G-code file.");
+            json prepared;
+            prepared["schema_version"] = 1; prepared["event"] = "gcode_prepared"; prepared["status"] = "prepared";
+            prepared["request_number"] = m_orto_request_number; prepared["request_id"] = m_orto_request_id; prepared["printer_id"] = m_orto_printer_id;
+            prepared["request_item_id"] = m_orto_request_item_id; prepared["request_unit_id"] = m_orto_request_unit_id; prepared["job_id"] = m_orto_job_id;
+            prepared["algorithm"] = m_orto_algorithm; prepared["algorithm_version"] = "1"; prepared["source_stl"] = m_input_files.front();
+            prepared["gcode_file"] = gcode.filename().string(); prepared["gcode_sha256"] = orto_sha256_file(gcode.string());
+            json profiles = json::array();
+            for (size_t i = 0; i < load_configs.size(); ++i) { const std::string& path = load_configs[i]; if (!boost::filesystem::is_regular_file(path)) throw std::runtime_error("Printer/process profile disappeared: " + path); profiles.push_back({{"role", i == 0 ? "printer" : "process"}, {"path", path}, {"sha256", orto_sha256_file(path)}}); }
+            for (const std::string& path : load_filaments) { if (!boost::filesystem::is_regular_file(path)) throw std::runtime_error("Filament profile disappeared: " + path); profiles.push_back({{"role", "filament"}, {"path", path}, {"sha256", orto_sha256_file(path)}}); }
+            prepared["profiles"] = std::move(profiles);
+            const boost::filesystem::path temp(sidecar.string() + ".tmp");
+            { boost::nowide::ofstream output(temp.string(), std::ios::binary | std::ios::trunc); if (!output) throw std::runtime_error("Cannot create the ORTO prepared-G-code manifest."); output << prepared.dump(2) << std::endl; if (!output) throw std::runtime_error("Cannot write the ORTO prepared-G-code manifest."); }
+            boost::filesystem::rename(temp, sidecar);
+        } catch (const std::exception& error) {
+            BOOST_LOG_TRIVIAL(error) << "ORTO prepared-G-code manifest failed: " << error.what();
+            record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, plate_to_slice, error.what(), sliced_info);
+            boost::nowide::cerr << "ORTO headless result was not finalized: " << error.what() << std::endl;
+            boost::nowide::cout.flush(); boost::nowide::cerr.flush(); return CLI_INVALID_PARAMS;
+        }
+    }
 
     //record the duplicate here
     if (duplicate_count > 0)

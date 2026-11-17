@@ -2735,6 +2735,20 @@ void MainFrame::update_side_button_style()
         m_orto_approve_btn->SetExtraSize(wxSize(FromDIP(24), FromDIP(10)));
         m_orto_approve_btn->SetMinSize(wxSize(-1, FromDIP(24)));
         m_orto_approve_btn->GetParent()->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#3B4446")));
+        StateColor approval_background;
+        approval_background.append(0x6B6B6B, StateColor::Disabled);
+        approval_background.append(wxColour("#008F83"), StateColor::Pressed);
+        approval_background.append(wxColour("#27BDA9"), StateColor::Hovered);
+        approval_background.append(wxColour("#00A58F"), StateColor::Normal);
+        approval_background.setTakeFocusedAsHovered(false);
+        m_orto_approve_btn->SetBackgroundColor(approval_background);
+        StateColor approval_border;
+        approval_border.append(0x6B6B6B, StateColor::Disabled);
+        approval_border.append(wxColour("#007D72"), StateColor::Pressed);
+        approval_border.append(wxColour("#159F90"), StateColor::Hovered);
+        approval_border.append(wxColour("#008F80"), StateColor::Normal);
+        approval_border.setTakeFocusedAsHovered(false);
+        m_orto_approve_btn->SetBorderColor(approval_border);
     }
 
     // Keep panel backgrounds in sync with SideButton's darkModeColorFor(#3B4446) bottom strip
@@ -2755,6 +2769,12 @@ void MainFrame::update_slice_print_status(SlicePrintEventType event, bool can_sl
     if (!can_print)
         enable_print = false;
 
+    const bool orto_review_mode = wxGetApp().init_params != nullptr &&
+        wxGetApp().init_params->orto_mode == "production" && wxGetApp().init_params->orto_stage == "review";
+    if (orto_review_mode) {
+        enable_slice = false;
+        enable_print = false;
+    }
 
     //process print logic
     if (enable_print)
@@ -2773,6 +2793,10 @@ void MainFrame::update_slice_print_status(SlicePrintEventType event, bool can_sl
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(" m_slice_select %1%: can_slice= %2%, can_print %3%, enable_slice %4%, enable_print %5% ")%m_slice_select % can_slice %can_print %enable_slice %enable_print;
     m_print_btn->Enable(enable_print);
     m_slice_btn->Enable(enable_slice);
+    if (orto_review_mode) {
+        m_print_option_btn->Enable(false);
+        m_slice_option_btn->Enable(false);
+    }
     if (m_orto_approve_btn != nullptr)
         m_orto_approve_btn->Enable(can_approve_orto_gcode());
     m_slice_enable = enable_slice;
@@ -2790,16 +2814,21 @@ bool MainFrame::can_approve_orto_gcode() const
 {
     if (m_plater == nullptr || wxGetApp().init_params == nullptr ||
         wxGetApp().init_params->orto_mode != "production" ||
-        wxGetApp().init_params->orto_job_id.empty() ||
-        wxGetApp().init_params->orto_output_dir.empty() ||
-        (wxGetApp().init_params->orto_algorithm == "cosmetic_shell" &&
-         !wxGetApp().init_params->orto_preparation_completed))
+        wxGetApp().init_params->orto_job_id.empty() || wxGetApp().init_params->orto_output_dir.empty())
         return false;
-
+    const auto* context = wxGetApp().init_params;
+    if (context->orto_stage == "review") {
+        if (!context->orto_review_verified || !context->input_gcode || context->input_files.size() != 1 ||
+            !m_plater->only_gcode_mode() || context->orto_expected_gcode_sha256.empty())
+            return false;
+        return boost::filesystem::is_regular_file(context->input_files.front()) &&
+            !m_plater->get_last_loaded_gcode().empty();
+    }
+    if (context->orto_stage != "gui" ||
+        (context->orto_algorithm == "cosmetic_shell" && !context->orto_preparation_completed))
+        return false;
     PartPlate* plate = m_plater->get_partplate_list().get_curr_plate();
-    if (plate == nullptr || !plate->is_slice_result_valid())
-        return false;
-
+    if (plate == nullptr || !plate->is_slice_result_valid()) return false;
     const std::string gcode_path = plate->get_tmp_gcode_path();
     return !gcode_path.empty() && boost::filesystem::is_regular_file(gcode_path);
 }
@@ -2813,8 +2842,10 @@ void MainFrame::approve_orto_gcode()
     }
 
     const auto* context = wxGetApp().init_params;
-    PartPlate* plate = m_plater->get_partplate_list().get_curr_plate();
-    const std::string source_gcode = plate->get_tmp_gcode_path();
+    const bool review_mode = context->orto_stage == "review";
+    PartPlate* plate = review_mode ? nullptr : m_plater->get_partplate_list().get_curr_plate();
+    const std::string source_gcode = review_mode ? context->input_files.front() :
+        (plate != nullptr ? plate->get_tmp_gcode_path() : std::string());
 
     const auto safe_filename_part = [](const std::string& value) {
         std::string safe;
@@ -2877,8 +2908,22 @@ void MainFrame::approve_orto_gcode()
         if (boost::filesystem::exists(output_gcode) || boost::filesystem::exists(output_manifest))
             throw std::runtime_error("This ORTO job already has an output package. Duplicate approval is blocked.");
 
+        nlohmann::json prepared_manifest;
+        if (review_mode) {
+            boost::nowide::ifstream prepared_input(context->orto_review_manifest_path, std::ios::binary);
+            if (!prepared_input) throw std::runtime_error("Cannot reopen the ORTO prepared-G-code manifest.");
+            prepared_input >> prepared_manifest;
+            const std::string source_hash = sha256_file(source_gcode);
+            if (source_hash != context->orto_expected_gcode_sha256 ||
+                prepared_manifest.value("gcode_sha256", std::string()) != context->orto_expected_gcode_sha256 ||
+                prepared_manifest.value("job_id", std::string()) != context->orto_job_id ||
+                prepared_manifest.value("status", std::string()) != "prepared")
+                throw std::runtime_error("The reviewed G-code or its preparation manifest has changed. Approval is blocked.");
+        }
         boost::filesystem::copy_file(source_gcode, output_gcode);
         const std::string gcode_hash = sha256_file(output_gcode.string());
+        if (review_mode && gcode_hash != context->orto_expected_gcode_sha256)
+            throw std::runtime_error("The copied G-code does not match the exact headless-prepared file.");
 
         nlohmann::json manifest;
         manifest["schema_version"] = 1;
@@ -2903,28 +2948,33 @@ void MainFrame::approve_orto_gcode()
         manifest["algorithm"] = context->orto_algorithm;
         manifest["algorithm_version"] = "1";
         std::string source_stl;
-        if (!context->input_files.empty()) {
-            const std::string extension = boost::filesystem::path(context->input_files.front()).extension().string();
-            if (extension == ".stl" || extension == ".STL")
-                source_stl = context->input_files.front();
+        nlohmann::json profile_files = nlohmann::json::array();
+        if (review_mode) {
+            source_stl = prepared_manifest.value("source_stl", std::string());
+            if (!prepared_manifest.contains("profiles") || !prepared_manifest["profiles"].is_array() || prepared_manifest["profiles"].size() != 3)
+                throw std::runtime_error("The prepared manifest does not contain the required three profile records.");
+            profile_files = prepared_manifest["profiles"];
+            manifest["prepared_gcode_sha256"] = context->orto_expected_gcode_sha256;
+            manifest["prepared_manifest"] = context->orto_review_manifest_path;
+        } else {
+            if (!context->input_files.empty()) {
+                const std::string extension = boost::filesystem::path(context->input_files.front()).extension().string();
+                if (extension == ".stl" || extension == ".STL") source_stl = context->input_files.front();
+            }
+            for (size_t index = 0; index < context->load_configs.size(); ++index) {
+                const std::string& path = context->load_configs[index];
+                if (!boost::filesystem::is_regular_file(path)) throw std::runtime_error("A loaded printer/process profile is no longer available: " + path);
+                const char* role = index == 0 ? "printer" : (index == 1 ? "process" : "settings");
+                profile_files.push_back({{"role", role}, {"path", path}, {"sha256", sha256_file(path)}});
+            }
+            for (const std::string& path : context->load_filaments) {
+                if (!boost::filesystem::is_regular_file(path)) throw std::runtime_error("A loaded filament profile is no longer available: " + path);
+                profile_files.push_back({{"role", "filament"}, {"path", path}, {"sha256", sha256_file(path)}});
+            }
         }
         manifest["source_stl"] = source_stl;
         manifest["gcode_file"] = output_gcode.filename().string();
         manifest["gcode_sha256"] = gcode_hash;
-
-        nlohmann::json profile_files = nlohmann::json::array();
-        for (size_t index = 0; index < context->load_configs.size(); ++index) {
-            const std::string& path = context->load_configs[index];
-            if (!boost::filesystem::is_regular_file(path))
-                throw std::runtime_error("A loaded printer/process profile is no longer available: " + path);
-            const char* role = index == 0 ? "printer" : (index == 1 ? "process" : "settings");
-            profile_files.push_back({{"role", role}, {"path", path}, {"sha256", sha256_file(path)}});
-        }
-        for (const std::string& path : context->load_filaments) {
-            if (!boost::filesystem::is_regular_file(path))
-                throw std::runtime_error("A loaded filament profile is no longer available: " + path);
-            profile_files.push_back({{"role", "filament"}, {"path", path}, {"sha256", sha256_file(path)}});
-        }
         manifest["profiles"] = std::move(profile_files);
 
         temporary_manifest = boost::filesystem::path(output_manifest.string() + ".tmp");

@@ -39,6 +39,7 @@ struct GUI_InitParams
 
     // Explicit ORTO production context passed by the CLI launcher.
     std::string                 orto_mode;
+    std::string                 orto_stage;
     std::string                 orto_algorithm;
     std::string                 orto_request_number;
     std::string                 orto_request_id;
@@ -47,6 +48,9 @@ struct GUI_InitParams
     std::string                 orto_request_unit_id;
     std::string                 orto_job_id;
     std::string                 orto_output_dir;
+    std::string                 orto_review_manifest_path;
+    std::string                 orto_expected_gcode_sha256;
+    bool                        orto_review_verified { false };
     bool                        orto_preparation_completed { false };
 };
 

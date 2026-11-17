@@ -73,6 +73,7 @@ private:
     std::vector<Model>          m_models;
     bool                        m_orto_headless{ false };
     bool                        m_orto_production_mode{ false };
+    std::string                 m_orto_stage;
     std::string                 m_orto_algorithm;
     std::string                 m_orto_request_number;
     std::string                 m_orto_request_id;
@@ -81,6 +82,9 @@ private:
     std::string                 m_orto_request_unit_id;
     std::string                 m_orto_job_id;
     std::string                 m_orto_output_dir;
+    std::string                 m_orto_review_manifest_path;
+    std::string                 m_orto_expected_gcode_sha256;
+    bool                        m_orto_review_verified{ false };
 
     bool setup(int argc, char **argv);
 
