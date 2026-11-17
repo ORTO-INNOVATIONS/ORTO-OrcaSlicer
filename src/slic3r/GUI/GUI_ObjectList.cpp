@@ -6,6 +6,7 @@
 #include "GUI_Factories.hpp"
 //#include "GUI_ObjectLayers.hpp"
 #include "GUI_App.hpp"
+#include "GUI_Init.hpp"
 #include "Shortcuts.hpp"
 #include "I18N.hpp"
 #include "Plater.hpp"
