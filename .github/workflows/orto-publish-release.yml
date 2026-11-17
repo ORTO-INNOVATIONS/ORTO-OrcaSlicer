@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.ORTO_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+      RELEASE_TOKEN_SOURCE: ${{ secrets.ORTO_RELEASE_TOKEN != '' && 'ORTO_RELEASE_TOKEN' || 'GITHUB_TOKEN' }}
       RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.run_id || '' }}
       TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
       TRIGGER_REF: ${{ github.ref }}
@@ -157,9 +158,7 @@ jobs:
           test -s "$asset_path"
 
           release_title="ORTO OrcaSlicer $version RELEASE"
-          # The preferred dedicated token is selected above. A GITHUB_TOKEN
-          # fallback is retained for repositories where Actions is allowed to
-          # publish releases.
+          echo "Release credential: $RELEASE_TOKEN_SOURCE"
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG does not exist yet."
             gh release create "$TAG" "$asset_path" \
