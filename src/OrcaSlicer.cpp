@@ -1358,15 +1358,41 @@ static bool prepare_orto_shell_for_cli(Model& model, double shell_lift_height,
 
 int CLI::run(int argc, char **argv)
 {
-    // ORTO launch modes are consumed here so the regular CLI parser remains unchanged.
-    // --nogui selects the native slicing pipeline and adds --slice 0 when omitted.
-    // --gui simply preserves the existing no-action GUI startup path.
+    // Consume ORTO-only arguments before the native CLI parser. Without --orto-mode,
+    // no production context or ORTO model preparation is enabled.
     std::vector<std::string> orto_cli_arguments;
     std::vector<char*> orto_cli_argv;
     bool requested_orto_headless = false;
     bool requested_orto_gui = false;
     bool has_explicit_slice = false;
+    std::string requested_orto_mode;
+    std::string requested_orto_algorithm;
+    std::string requested_orto_request_number;
+    std::string requested_orto_request_item_id;
+    std::string requested_orto_request_unit_id;
+    std::string requested_orto_job_id;
+    std::string orto_argument_error;
+    std::set<std::string> seen_orto_options;
     orto_cli_arguments.reserve(size_t(argc) + 2);
+
+    const auto consume_orto_option = [&](int& index, const std::string& argument,
+                                         const std::string& option, std::string& value) -> bool {
+        const std::string prefix = option + "=";
+        if (argument == option) {
+            if (index + 1 >= argc || argv[index + 1] == nullptr) {
+                orto_argument_error = "Missing value for " + option;
+                return true;
+            }
+            value = argv[++index] ? argv[index] : "";
+            return true;
+        }
+        if (boost::starts_with(argument, prefix)) {
+            value = argument.substr(prefix.size());
+            return true;
+        }
+        return false;
+    };
+
     for (int i = 0; i < argc; ++i) {
         const std::string argument = argv[i] ? argv[i] : "";
         if (argument == "--nogui") {
@@ -1377,11 +1403,55 @@ int CLI::run(int argc, char **argv)
             requested_orto_gui = true;
             continue;
         }
+
+        bool consumed = false;
+        const std::pair<const char*, std::string*> orto_options[] = {
+            {"--orto-mode", &requested_orto_mode},
+            {"--orto-algorithm", &requested_orto_algorithm},
+            {"--orto-request-number", &requested_orto_request_number},
+            {"--orto-request-item-id", &requested_orto_request_item_id},
+            {"--orto-request-unit-id", &requested_orto_request_unit_id},
+            {"--orto-job-id", &requested_orto_job_id}
+        };
+        for (const auto& option : orto_options) {
+            if (consume_orto_option(i, argument, option.first, *option.second)) {
+                consumed = true;
+                if (orto_argument_error.empty() &&
+                    (!seen_orto_options.insert(option.first).second || option.second->empty()))
+                    orto_argument_error = std::string("Invalid or repeated value for ") + option.first;
+                break;
+            }
+        }
+        if (consumed)
+            continue;
+
         if (argument == "--slice" || boost::starts_with(argument, "--slice="))
             has_explicit_slice = true;
         orto_cli_arguments.push_back(argument);
     }
 
+    if (!orto_argument_error.empty()) {
+        boost::nowide::cerr << "ORTO argument error: " << orto_argument_error << std::endl;
+        return CLI_INVALID_PARAMS;
+    }
+    if (!requested_orto_mode.empty() && requested_orto_mode != "production") {
+        boost::nowide::cerr << "Unknown --orto-mode value: " << requested_orto_mode
+                            << ". Supported value: production." << std::endl;
+        return CLI_INVALID_PARAMS;
+    }
+    if (!requested_orto_algorithm.empty() && requested_orto_algorithm != "cosmetic_shell") {
+        boost::nowide::cerr << "Unknown --orto-algorithm value: " << requested_orto_algorithm
+                            << ". Supported value: cosmetic_shell." << std::endl;
+        return CLI_INVALID_PARAMS;
+    }
+    if (requested_orto_mode.empty() && !requested_orto_algorithm.empty()) {
+        boost::nowide::cerr << "--orto-algorithm requires --orto-mode production." << std::endl;
+        return CLI_INVALID_PARAMS;
+    }
+    if (requested_orto_mode == "production" && requested_orto_headless) {
+        boost::nowide::cerr << "ORTO production mode requires the GUI so the operator can review and approve G-code." << std::endl;
+        return CLI_INVALID_PARAMS;
+    }
     if (requested_orto_headless && requested_orto_gui) {
         boost::nowide::cerr << "--nogui and --gui cannot be used together." << std::endl;
         return CLI_INVALID_PARAMS;
@@ -1396,7 +1466,14 @@ int CLI::run(int argc, char **argv)
     argc = static_cast<int>(orto_cli_argv.size());
     orto_cli_argv.push_back(nullptr); // Keep the conventional argv[argc] terminator for wxEntry.
     argv = orto_cli_argv.data();
+
     m_orto_headless = requested_orto_headless;
+    m_orto_production_mode = requested_orto_mode == "production";
+    m_orto_algorithm = requested_orto_algorithm;
+    m_orto_request_number = requested_orto_request_number;
+    m_orto_request_item_id = requested_orto_request_item_id;
+    m_orto_request_unit_id = requested_orto_request_unit_id;
+    m_orto_job_id = requested_orto_job_id;
 
     // Mark the main thread for the debugger and for runtime checks.
     set_current_thread_name("orcaslicer_main");
@@ -1730,6 +1807,12 @@ int CLI::run(int argc, char **argv)
         params.load_configs = load_configs;
         params.load_filaments = load_filaments;
         params.extra_config = std::move(m_extra_config);
+        params.orto_mode = m_orto_production_mode ? "production" : "";
+        params.orto_algorithm = m_orto_algorithm;
+        params.orto_request_number = m_orto_request_number;
+        params.orto_request_item_id = m_orto_request_item_id;
+        params.orto_request_unit_id = m_orto_request_unit_id;
+        params.orto_job_id = m_orto_job_id;
 
         std::vector<std::string>    gcode_files;
         std::vector<std::string>    non_gcode_files;
@@ -2274,9 +2357,9 @@ int CLI::run(int argc, char **argv)
         m_models.push_back(std::move(model));
     }
 
-    // ORTO headless mode prepares a single STL model before the native CLI pipeline
-    // applies its standard slicing and G-code export actions.
-    if (m_orto_headless) {
+    // ORTO model preparation is never inferred from the input file or the headless flag.
+    // It is selected explicitly by the production context and technology algorithm.
+    if (m_orto_headless && m_orto_production_mode && m_orto_algorithm == "cosmetic_shell") {
         if (m_input_files.size() != 1 || !boost::algorithm::iends_with(m_input_files.front(), ".stl") ||
             m_models.size() != 1) {
             boost::nowide::cerr << "ORTO --nogui requires exactly one STL input file." << std::endl;
