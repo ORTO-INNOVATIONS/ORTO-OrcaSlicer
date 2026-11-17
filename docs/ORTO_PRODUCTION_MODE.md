@@ -45,7 +45,7 @@ orto-orca-slicer.exe ^
   --orto-request-item-id 13579 ^
   --orto-printer-id 4 ^
   --orto-job-id 550e8400-e29b-41d4-a716-446655440000 ^
-  --orto-output-dir "C:\\ORTO\\approved" ^
+  --orto-output-dir "C:\ORTO\approved" ^
   --load-settings "printer.json;process.json" ^
   --load-filaments "filament.json" ^
   "model.stl"
@@ -73,11 +73,11 @@ orto-orca-slicer.exe ^
   --orto-request-item-id 13579 ^
   --orto-printer-id 4 ^
   --orto-job-id 550e8400-e29b-41d4-a716-446655440000 ^
-  --orto-output-dir "C:\\ORTO\\approved" ^
-  --orto-prepared-dir "C:\\ORTO\\prepared" ^
-  --load-settings "C:\\ORTO\\profiles\\printer.json;C:\\ORTO\\profiles\\process.json" ^
-  --load-filaments "C:\\ORTO\\profiles\\filament.json" ^
-  --slice 0 "C:\\ORTO\\models\\cover.stl"
+  --orto-output-dir "C:\ORTO\approved" ^
+  --orto-prepared-dir "C:\ORTO\prepared" ^
+  --load-settings "C:\ORTO\profiles\printer.json;C:\ORTO\profiles\process.json" ^
+  --load-filaments "C:\ORTO\profiles\filament.json" ^
+  --slice 0 "C:\ORTO\models\cover.stl"
 ```
 
 После успешного завершения Helper запускает Production Review, передавая тот же job-контекст, `--orto-output-dir` и путь к `<request_number>_<job_id>.prepared.gcode` как входной файл. Профили и STL на этом этапе не передаются.
@@ -94,8 +94,8 @@ orto-orca-slicer.exe ^
   --orto-request-item-id 13579 ^
   --orto-printer-id 4 ^
   --orto-job-id 550e8400-e29b-41d4-a716-446655440000 ^
-  --orto-output-dir "C:\\ORTO\\approved" ^
-  "C:\\ORTO\\prepared\\12345_550e8400-e29b-41d4-a716-446655440000.prepared.gcode"
+  --orto-output-dir "C:\ORTO\approved" ^
+  "C:\ORTO\prepared\12345_550e8400-e29b-41d4-a716-446655440000.prepared.gcode"
 ```
 
 В Review не передаются STL, `--load-settings`, `--load-filaments` или `--orto-prepared-dir`: слайсер читает подготовительный sidecar рядом с G-code и открывает именно этот G-code.
