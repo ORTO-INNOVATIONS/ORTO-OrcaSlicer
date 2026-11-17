@@ -1708,7 +1708,10 @@ void ObjectList::show_context_menu(const bool evt_context_menu)
                 menu =  type & itPlate                                              ? plater->plate_menu() :
                         type & itInstance                                           ? plater->instance_menu() :
                         printer_technology() == ptFFF                               ? plater->object_menu() : plater->sla_object_menu();
-            show_orto_prepare = (type & (itObject | itInstance)) && printer_technology() == ptFFF;
+            show_orto_prepare = wxGetApp().init_params != nullptr &&
+                wxGetApp().init_params->orto_mode == "production" &&
+                wxGetApp().init_params->orto_algorithm == "cosmetic_shell" &&
+                (type & (itObject | itInstance)) && printer_technology() == ptFFF;
             plater->SetPlateIndexByRightMenuInLeftUI(-1);
             if (type & itPlate) {
                 int            plate_idx = -1;
