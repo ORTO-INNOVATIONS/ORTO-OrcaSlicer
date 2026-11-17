@@ -72,6 +72,12 @@ private:
     std::set<std::string>       m_given_option_keys;
     std::vector<Model>          m_models;
     bool                        m_orto_headless{ false };
+    bool                        m_orto_production_mode{ false };
+    std::string                 m_orto_algorithm;
+    std::string                 m_orto_request_number;
+    std::string                 m_orto_request_item_id;
+    std::string                 m_orto_request_unit_id;
+    std::string                 m_orto_job_id;
 
     bool setup(int argc, char **argv);
 
