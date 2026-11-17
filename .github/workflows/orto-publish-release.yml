@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version=$(sed -n 's/.*set(SoftFever_VERSION "\\(.*\\)").*/\\1/p' version.inc)
+          version=$(awk -F '"' '/SoftFever_VERSION/ { print $2; exit }' version.inc)
           expected_tag="v$version"
           if [ "$TAG" != "$expected_tag" ]; then
             echo "::error::Tag $TAG does not match version.inc ($expected_tag)."
