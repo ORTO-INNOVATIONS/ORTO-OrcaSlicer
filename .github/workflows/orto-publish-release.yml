@@ -153,7 +153,7 @@ jobs:
           ## Установка
           Распакуйте архив в отдельный каталог и укажите путь к `orto-orca-slicer.exe` в настройках интеграции ORTO.
           NOTES
-            printf '\\n## Источник бинарников\\nАртефакт из успешной ORTO Windows Portable Build для commit `%s` (run `%s`). Повторная компиляция при публикации не выполняется.\\n' "$release_sha" "$run_id"
+            printf '\\n## Источник бинарников\\nАртефакт из успешной ORTO Windows Portable Build для commit %s (run %s). Повторная компиляция при публикации не выполняется.\\n' "$release_sha" "$run_id"
           } > release-notes.md
 
           release_title="ORTO OrcaSlicer $version RELEASE"
