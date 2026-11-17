@@ -1,6 +1,9 @@
 name: Publish ORTO Portable Release
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       run_id:
@@ -23,53 +26,51 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      RUN_ID: ${{ inputs.run_id }}
-      TAG: ${{ inputs.tag }}
+      RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.run_id || '' }}
+      TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
     steps:
       - name: Checkout release documentation
         uses: actions/checkout@v7
         with:
-          ref: orto-dev
+          ref: ${{ github.ref }}
           lfs: false
 
       - name: Validate version and source build
         shell: bash
         run: |
           set -euo pipefail
-          version=$(sed -n 's/.*set(SoftFever_VERSION "\(.*\)").*/\1/p' version.inc)
+          version=$(sed -n 's/.*set(SoftFever_VERSION "\\(.*\\)").*/\\1/p' version.inc)
           expected_tag="v$version"
           if [ "$TAG" != "$expected_tag" ]; then
             echo "::error::Tag $TAG does not match version.inc ($expected_tag)."
             exit 1
           fi
-          run=$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json conclusion,headBranch,headSha,workflowName)
+
+          release_sha=$(git rev-parse HEAD)
+          run_id="$RUN_ID"
+          if [ -z "$run_id" ]; then
+            run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow orto-windows-build.yml --branch orto-dev --status success --limit 100 --json databaseId,headSha | jq -r --arg sha "$release_sha" '[.[] | select(.headSha == $sha)][0].databaseId // empty')
+          fi
+          if [ -z "$run_id" ]; then
+            echo "::error::No successful ORTO Windows Portable Build exists for release commit $release_sha."
+            exit 1
+          fi
+
+          run=$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json conclusion,headBranch,headSha,workflowName)
           conclusion=$(jq -r '.conclusion' <<< "$run")
           branch=$(jq -r '.headBranch' <<< "$run")
           workflow=$(jq -r '.workflowName' <<< "$run")
           target_sha=$(jq -r '.headSha' <<< "$run")
           echo "Source workflow: $workflow; branch: $branch; conclusion: $conclusion; build SHA: $target_sha"
-          if [ "$conclusion" != success ] || [ "$branch" != orto-dev ] || { [ "$workflow" != "ORTO Windows Portable Build" ] && [ "$workflow" != "ORTO Quick Build" ]; }; then
-            echo "::error::Source run must be successful and belong to orto-dev."
+          if [ "$conclusion" != success ] || [ "$branch" != orto-dev ] || [ "$target_sha" != "$release_sha" ] || [ "$workflow" != "ORTO Windows Portable Build" ]; then
+            echo "::error::Release requires a successful ORTO Windows Portable Build for the exact tagged orto-dev commit."
             exit 1
           fi
 
-          # The release tag may include documentation/workflow metadata committed
-          # after the verified build, but no source/build inputs may differ.
-          release_sha=$(git rev-parse HEAD)
-          if ! git merge-base --is-ancestor "$target_sha" "$release_sha"; then
-            echo "::error::The successful build commit is not an ancestor of the release checkout."
-            exit 1
-          fi
-          changed_paths=$(git diff --name-only "$target_sha" "$release_sha")
-          for path in $changed_paths; do
-            case "$path" in
-              README.md|CHANGELOG.md|VERSION.txt|docs/ORTO_PRODUCTION_MODE.md|.github/workflows/orto-publish-release.yml|.github/workflows/orto-windows-build.yml) ;;
-              *)
-                echo "::error::Code/build input changed after the source build: $path"
-                exit 1
-                ;;
-            esac
-          done
+          echo "RUN_ID=$run_id" >> "$GITHUB_ENV"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "TARGET_SHA=$release_sha" >> "$GITHUB_ENV"
+
       - name: Download portable artifact
         run: |
           set -euo pipefail
