@@ -1154,12 +1154,19 @@ void GUI_App::post_init()
                 const bool model_loaded = this->plater()->load_files(input_files);
                 // ORTO Edition: prepare only the model loaded by this startup CLI invocation.
                 // Use its model index directly; never infer the target from the current selection.
-                if (this->init_params->orto_mode == "production" &&
-                    this->init_params->orto_algorithm == "cosmetic_shell" &&
-                    model_loaded && input_files.size() == 1 &&
-                    this->plater()->model().objects.size() == 1 &&
-                    this->plater()->model().objects.front()->instances.size() == 1) {
-                    wxGetApp().obj_list()->prepare_orto_shell_for_object(0, 0, false);
+                if (this->init_params != nullptr &&
+                    this->init_params->orto_mode == "production" &&
+                    this->init_params->orto_algorithm == "cosmetic_shell") {
+                    const bool valid_shell_input = model_loaded && input_files.size() == 1 &&
+                        this->plater()->model().objects.size() == 1 &&
+                        this->plater()->model().objects.front()->instances.size() == 1;
+                    if (!valid_shell_input) {
+                        wxMessageBox(_L("Cosmetic Shell production mode requires exactly one STL model with one object and one instance."),
+                                     _L("ORTO production"), wxOK | wxICON_ERROR);
+                    } else {
+                        this->init_params->orto_preparation_completed =
+                            wxGetApp().obj_list()->prepare_orto_shell_for_object(0, 0, true);
+                    }
                 }
                 try {
                     if (!input_files.empty()) {
