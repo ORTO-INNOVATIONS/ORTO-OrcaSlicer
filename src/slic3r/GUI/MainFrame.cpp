@@ -2853,7 +2853,7 @@ void MainFrame::approve_orto_gcode()
         safe.reserve(value.size());
         for (unsigned char ch : value)
             safe.push_back((std::isalnum(ch) || ch == '-' || ch == '_') ? char(ch) : '_');
-        while (!safe.empty() && safe.front() == '_') safe.erase(safe.begin());
+        while (!safe.empty() && (safe.front() == '_' || safe.front() == '-')) safe.erase(safe.begin());
         while (!safe.empty() && safe.back() == '_') safe.pop_back();
         return safe;
     };
