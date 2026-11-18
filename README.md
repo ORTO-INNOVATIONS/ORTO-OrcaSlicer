@@ -1,11 +1,11 @@
 # ORTO OrcaSlicer
 
-**Текущая разработка: `2.6.0-ORTO.21 TEST`**  
+**Текущая разработка: `2.6.0-ORTO.22 TEST`**  
 Последняя стабильная и проверенная Windows x64 Portable-версия — `2.6.0-ORTO.20 RELEASE`, GitHub Actions [#113](https://github.com/ORTO-INNOVATIONS/ORTO-OrcaSlicer/actions/runs/44068537346), commit [`9f78e7e`](https://github.com/ORTO-INNOVATIONS/ORTO-OrcaSlicer/commit/9f78e7e0c70f512951a130dc3a26acb6cf567a3f). Headless CLI с внешними профилями Elegoo printer/process/filament и формированием prepared G-code + sidecar-манифеста проверен пользователем на Windows.
 
 ## Статус версии
 
-- `2.6.0-ORTO.21 TEST` — исправление начального дефиса в имени prepared/approved-файлов; сборочная и функциональная проверка ещё не выполнена.
+- `2.6.0-ORTO.22 TEST` — исправлена обработка кириллического префикса номера заявки при формировании approved-имён; сборочная и функциональная проверка ещё не выполнена.
 - `2.6.0-ORTO.20 RELEASE (VERIFIED)` — последняя стабильная версия. Сборка Windows x64 Portable завершилась успешно; пользователь подтвердил работу Headless CLI с тремя внешними JSON-профилями, создание G-code и `.orto-prepared.json`.
 - Предыдущий опубликованный релиз — `2.6.0-ORTO.8`; версия `.20` заменяет его как актуальный стабильный выпуск.
 

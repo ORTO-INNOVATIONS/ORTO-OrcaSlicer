@@ -2893,7 +2893,19 @@ void MainFrame::approve_orto_gcode()
     boost::filesystem::path output_manifest;
     boost::filesystem::path temporary_manifest;
     try {
-        const std::string request_part = safe_filename_part(context->orto_request_number);
+        std::string request_number_for_filename = context->orto_request_number;
+        const size_t prefix_separator = request_number_for_filename.find('-');
+        if (prefix_separator != std::string::npos && prefix_separator > 0) {
+            const bool has_letter_prefix = std::all_of(
+                request_number_for_filename.begin(),
+                request_number_for_filename.begin() + prefix_separator,
+                [](unsigned char ch) {
+                    return ch >= 0x80 || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
+                });
+            if (has_letter_prefix)
+                request_number_for_filename.erase(0, prefix_separator + 1);
+        }
+        const std::string request_part = safe_filename_part(request_number_for_filename);
         const std::string job_part = safe_filename_part(context->orto_job_id);
         if (request_part.empty() || job_part.empty())
             throw std::runtime_error("Request number and job ID must contain filename-safe characters.");
