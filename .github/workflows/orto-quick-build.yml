@@ -125,11 +125,19 @@ jobs:
             throw "OrcaSlicer quick build failed with exit code $LASTEXITCODE."
           }
 
+      - name: Read ORTO version
+        id: orto-version
+        shell: pwsh
+        run: |
+          $match = Select-String -Path version.inc -Pattern 'set\(SoftFever_VERSION "([^"]+)"\)' | Select-Object -First 1
+          if (-not $match) { throw 'SoftFever_VERSION not found' }
+          "value=$($match.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
+
       - name: Upload portable OrcaSlicer
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: ORTO-OrcaSlicer-Quick-Windows-x64-${{ github.sha }}
+          name: ORTO-OrcaSlicer-Quick-Windows-x64-${{ steps.orto-version.outputs.value }}-${{ github.sha }}
           path: build/OrcaSlicer
           if-no-files-found: error
           retention-days: 7
