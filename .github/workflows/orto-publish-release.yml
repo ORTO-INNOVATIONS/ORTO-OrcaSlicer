@@ -18,7 +18,7 @@ on:
         description: 'Release tag (must match version.inc; stable release)'
         required: true
         type: string
-        default: v2.6.0-ORTO.20
+        default: v2.6.0-ORTO.21
 
 permissions:
   contents: write
@@ -111,7 +111,7 @@ jobs:
             exit 1
           fi
 
-          artifact_name="ORTO-OrcaSlicer-Quick-Windows-x64-${release_sha}"
+          artifact_name="ORTO-OrcaSlicer-Quick-Windows-x64-${version}-${release_sha}"
           mkdir -p artifacts upload
           gh run download "${run_id}" \
             --repo "$GITHUB_REPOSITORY" \
