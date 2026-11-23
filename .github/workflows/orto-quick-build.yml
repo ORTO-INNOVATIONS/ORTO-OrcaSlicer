@@ -36,19 +36,34 @@ jobs:
       BUILD_CACHE_KEY: orto-quick-build-windows-x64-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
-      # Prefer Windows BSD tar over Git for Windows tar, which may lack gzip.
-      # actions/cache invokes tar from PATH when creating or restoring archives.
-      - name: Prefer Windows tar for cache
+      # The runner has Git for Windows tar.exe but no gzip.exe. Install a
+      # standalone gzip alongside tar and expose it to all action steps.
+      # Git's tar invokes gzip via sh, so changing PATH to System32 alone
+      # is not sufficient on this self-hosted machine.
+      - name: Ensure gzip is available for actions cache
         shell: pwsh
         run: |
-          $systemTar = Join-Path $env:WINDIR 'System32\tar.exe'
-          if (-not (Test-Path $systemTar)) {
-            throw "Windows tar.exe was not found: $systemTar"
+          $gzip = Get-Command gzip.exe -ErrorAction SilentlyContinue
+          if (-not $gzip) {
+            $candidates = @(
+              'C:\Strawberry\c\bin\gzip.exe',
+              'C:\Program Files\Git\mingw64\bin\gzip.exe',
+              'C:\Program Files\Git\usr\bin\gzip.exe'
+            )
+            foreach ($candidate in $candidates) {
+              if (Test-Path $candidate) {
+                $dir = Split-Path $candidate -Parent
+                "$dir" >> $env:GITHUB_PATH
+                $env:PATH = "$dir;$env:PATH"
+                $gzip = Get-Command gzip.exe -ErrorAction SilentlyContinue
+                break
+              }
+            }
           }
-          $systemDir = Split-Path $systemTar -Parent
-          $env:PATH = "$systemDir;$env:PATH"
-          "PATH=$env:PATH" >> $env:GITHUB_ENV
-          & $systemTar --version
+          if (-not $gzip) {
+            throw 'gzip.exe is missing on the runner. Install Git for Windows with gzip, or Strawberry Perl including gzip, and restart the runner.'
+          }
+          & $gzip.Source --version
 
       - name: Checkout
         uses: actions/checkout@v7
