@@ -217,6 +217,12 @@ if (WIN32)
     endif()
 
     add_executable(OrcaSlicer_app_gui WIN32 OrcaSlicer_app_msvc.cpp ${CMAKE_CURRENT_BINARY_DIR}/OrcaSlicer.rc)
+    # The Windows launcher loads optional WinAPI and OpenGL entry points via
+    # GetProcAddress; their typed function pointers are incompatible with
+    # FARPROC by design. Keep -Werror for everything else under clang-cl.
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(OrcaSlicer_app_gui PRIVATE -Wno-cast-function-type-mismatch)
+    endif()
     # Generate debug symbols even in release mode.
     if(MSVC)
         target_link_options(OrcaSlicer_app_gui PUBLIC "$<$<CONFIG:RELEASE>:/DEBUG>")
