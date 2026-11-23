@@ -113,23 +113,29 @@ jobs:
         if: inputs.force-build || steps.deps-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          Write-Host 'Dependency cache miss. Building dependencies once to bootstrap the Quick Build cache.'
-          # Self-hosted PAPUS: use preinstalled Strawberry Perl instead of Chocolatey.
-          $perl = Get-Command perl.exe -ErrorAction SilentlyContinue
-          if (-not $perl) {
-            $strawberryPerl = 'C:\Strawberry\perl\bin'
-            if (Test-Path (Join-Path $strawberryPerl 'perl.exe')) {
-              $env:PATH = "$strawberryPerl;$env:PATH"
-              $perl = Get-Command perl.exe -ErrorAction SilentlyContinue
-            }
+          Write-Host 'Dependency cache miss. Validating Strawberry Perl before compiling dependencies.'
+          # Git for Windows bundles an MSYS Perl ahead of Strawberry Perl in PATH.
+          # OpenSSL Configure needs standard Perl modules absent in that MSYS build.
+          $strawberryPerl = 'C:\Strawberry\perl\bin'
+          $strawberryExe = Join-Path $strawberryPerl 'perl.exe'
+          if (-not (Test-Path $strawberryExe)) {
+            throw "Strawberry Perl was not found at $strawberryExe. Install Strawberry Perl on PAPUS."
           }
-          if (-not $perl) {
-            throw 'Strawberry Perl is required on the self-hosted runner. Install it from https://strawberryperl.com/ and restart the runner service.'
-          }
-          & $perl.Source -v
+          # Do not rely on Get-Command perl.exe: Git for Windows may win PATH.
+          # Set PATH only for this step; all OpenSSL subprocesses inherit it.
+          $env:PATH = "$strawberryPerl;$env:PATH"
+          $env:PERL5LIB = ''
+          $env:PERL5OPT = ''
+          $env:PERLLIB = ''
+          & $strawberryExe -MLocale::Maketext::Simple -MIPC::Cmd -e 'print "Strawberry Perl modules OK\\n"'
           if ($LASTEXITCODE -ne 0) {
-            throw "Perl verification failed with exit code $LASTEXITCODE."
+            throw 'Strawberry Perl lacks required OpenSSL Configure modules.'
           }
+          $resolvedPerl = (Get-Command perl.exe -ErrorAction Stop).Source
+          if ($resolvedPerl -ine $strawberryExe) {
+            throw "Wrong Perl selected: $resolvedPerl; expected $strawberryExe"
+          }
+          Write-Host "Using Perl: $resolvedPerl"
           & .\build_win.bat -d --arch x64 --deps-dir $env:DEPS_DIR -l -x
           if ($LASTEXITCODE -ne 0) {
             throw "Dependency build failed with exit code $LASTEXITCODE."
