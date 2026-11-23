@@ -27,7 +27,7 @@ concurrency:
 jobs:
   quick-build:
     name: Incremental Windows x64 (Clang + Ninja)
-    runs-on: windows-latest
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 120
 
     env:
