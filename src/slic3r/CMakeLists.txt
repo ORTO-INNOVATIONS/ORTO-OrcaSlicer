@@ -945,6 +945,13 @@ else ()
     add_library(libslic3r_gui STATIC ${SLIC3R_GUI_SOURCES})
 endif ()
 target_include_directories(libslic3r_gui PRIVATE Utils ${CMAKE_CURRENT_BINARY_DIR})
+# Newer Visual Studio clang-cl diagnoses Windows GetProcAddress/FARPROC casts
+# even with explicit reinterpret_cast. The WinAPI's runtime symbol lookup
+# necessarily crosses function pointer types; suppress only this diagnostic,
+# rather than weakening the project's global -Werror policy.
+if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(libslic3r_gui PRIVATE -Wno-cast-function-type-mismatch)
+endif()
 
 if (WIN32)
     target_include_directories(libslic3r_gui SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../deps/WebView2/include)
