@@ -193,7 +193,8 @@ template<class F> typename F::FN winapi_get_function(const wchar_t *dll, const c
     static HINSTANCE dll_handle = LoadLibraryExW(dll, nullptr, 0);
 
     if (dll_handle == nullptr) { return nullptr; }
-    return (typename F::FN)GetProcAddress(dll_handle, fn_name);
+    // GetProcAddress returns FARPROC; the function signature is provided by F.
+    return reinterpret_cast<typename F::FN>(GetProcAddress(dll_handle, fn_name));
 }
 #endif
 
