@@ -18,7 +18,7 @@ on:
         description: 'Release tag (must match version.inc; stable release)'
         required: true
         type: string
-        default: v2.6.0-ORTO.21
+        default: v2.6.0-ORTO.22
 
 permissions:
   contents: write
@@ -142,6 +142,11 @@ jobs:
           - Headless CLI проверен с внешними JSON-профилями принтера, процесса и филамента Elegoo.
           - Неподтверждённый prepared G-code не передаётся в производственную очередь; downstream получает только approved G-code и manifest.
           - Folder Helper используется как локальный мост запуска Headless из ORTO Docs, но не оркестрирует Production Review.
+
+          ## Изменения 2.6.0-ORTO.22
+          - Нормализация prepared/approved-имён: З-000250 → 000250; дефисы UUID и исходный номер в манифесте сохраняются.
+          - Исправления сборки Windows на self-hosted runner PAPUS: gzip, Strawberry Perl/OpenSSL и clang-cl.
+          - Работоспособность версии подтверждена пользователем на рабочем ПК 25.11.2026.
 
           ## Формат распространения
           Только Windows x64 Portable. Установщик не предоставляется.
